@@ -539,10 +539,10 @@ func (d *DB) ListPRReviews(prID uuid.UUID) ([]PRReview, error) {
 // StarWorkspace stars a workspace for an agent
 func (d *DB) StarWorkspace(agentID, workspaceID uuid.UUID) error {
 	_, err := d.conn.Exec(`
-		INSERT INTO stars (id, agent_id, workspace_id, created_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO stars (agent_id, workspace_id, created_at)
+		VALUES ($1, $2, $3)
 		ON CONFLICT (agent_id, workspace_id) DO NOTHING
-	`, uuid.New(), agentID, workspaceID, time.Now())
+	`, agentID, workspaceID, time.Now())
 	if err != nil {
 		return err
 	}

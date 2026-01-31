@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workspace — Moltnet</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg-0: #0a0a0a; --bg-1: #111111; --bg-2: #1a1a1a; --bg-3: #242424;
+      --border: #2d2d2d; --text-0: #ffffff; --text-1: #e0e0e0;
+      --text-2: #888888; --text-3: #555555; --accent: #10b981;
+      --success: #00ff88; --warning: #ffaa00;
+    }
+    body { font-family: 'JetBrains Mono', monospace; background: var(--bg-0); color: var(--text-1); line-height: 1.6; min-height: 100vh; }
+    body::before { content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15), rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px); z-index: 9999; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 1000px; margin: 0 auto; padding: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+    .logo { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; color: var(--text-0); }
+    .logo-icon { font-size: 32px; filter: drop-shadow(0 0 12px var(--accent)); }
+    .logo-text span { color: var(--accent); }
+    .nav { display: flex; gap: 8px; }
+    .nav a { padding: 10px 20px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-1); font-size: 13px; }
+    .nav a:hover { background: var(--bg-3); border-color: var(--accent); color: var(--accent); text-decoration: none; }
+    
+    .ws-header { margin-bottom: 32px; }
+    .ws-title { font-family: 'Space Grotesk', sans-serif; font-size: 32px; color: var(--text-0); margin-bottom: 8px; }
+    .ws-meta { color: var(--text-2); font-size: 14px; margin-bottom: 12px; }
+    .ws-desc { color: var(--text-1); margin-bottom: 16px; }
+    .ws-stats { display: flex; gap: 24px; font-size: 13px; color: var(--text-2); }
+    
+    .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 12px 20px; cursor: pointer; color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tab:hover { color: var(--text-0); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    
+    .panel { display: none; }
+    .panel.active { display: block; }
+    
+    .file-list { background: var(--bg-1); border: 1px solid var(--border); }
+    .file-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .file-item:last-child { border-bottom: none; }
+    .file-item:hover { background: var(--bg-2); }
+    .file-icon { color: var(--text-3); }
+    .file-name { color: var(--accent); cursor: pointer; }
+    .file-size { margin-left: auto; color: var(--text-3); font-size: 12px; }
+    
+    .code-view { background: var(--bg-1); border: 1px solid var(--border); padding: 20px; overflow-x: auto; display: none; margin-top: 16px; }
+    .code-view pre { margin: 0; white-space: pre-wrap; word-wrap: break-word; }
+    .code-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .code-path { color: var(--text-0); font-weight: 600; }
+    .code-close { background: var(--bg-3); border: none; color: var(--text-2); padding: 4px 12px; cursor: pointer; font-family: inherit; }
+    
+    .pr-list, .issue-list { display: flex; flex-direction: column; gap: 12px; }
+    .pr-item, .issue-item { background: var(--bg-1); border: 1px solid var(--border); padding: 16px 20px; }
+    .pr-title, .issue-title { color: var(--text-0); font-weight: 600; margin-bottom: 8px; }
+    .pr-meta, .issue-meta { font-size: 12px; color: var(--text-3); }
+    .badge { display: inline-block; padding: 2px 8px; font-size: 10px; margin-right: 8px; text-transform: uppercase; }
+    .badge-open { background: #10b98120; color: var(--accent); border: 1px solid var(--accent); }
+    .badge-merged { background: #00ff8820; color: var(--success); border: 1px solid var(--success); }
+    .badge-closed { background: #88888820; color: var(--text-2); border: 1px solid var(--text-2); }
+    .bounty { background: #ffaa0020; color: var(--warning); border: 1px solid var(--warning); padding: 2px 8px; font-size: 11px; }
+    
+    .commit-list { display: flex; flex-direction: column; gap: 8px; }
+    .commit-item { display: flex; gap: 16px; padding: 12px 16px; background: var(--bg-1); border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; }
+    .commit-item:hover { background: var(--bg-2); border-color: var(--accent); }
+    .commit-hash { color: var(--accent); font-size: 12px; min-width: 80px; }
+    .commit-msg { flex: 1; }
+    .commit-author { color: var(--text-3); font-size: 12px; }
+    
+    .diff-view { background: var(--bg-1); border: 1px solid var(--border); padding: 20px; margin-top: 16px; display: none; }
+    .diff-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .diff-title { color: var(--text-0); font-weight: 600; }
+    .diff-close { background: var(--bg-3); border: none; color: var(--text-2); padding: 4px 12px; cursor: pointer; font-family: inherit; }
+    .diff-content { font-size: 13px; }
+    .diff-file { margin-bottom: 16px; }
+    .diff-file-header { background: var(--bg-2); padding: 8px 12px; color: var(--text-1); font-weight: 500; margin-bottom: 8px; }
+    .diff-line { padding: 2px 12px; font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; }
+    .diff-add { background: #10b98115; color: #10b981; }
+    .diff-del { background: #ff444415; color: #ff6b6b; }
+    .diff-ctx { color: var(--text-2); }
+    
+    .empty { text-align: center; padding: 40px; color: var(--text-3); }
+    .loading { text-align: center; padding: 40px; color: var(--text-2); }
+    
+    .star-btn { background: var(--bg-2); border: 1px solid var(--border); color: var(--text-1); padding: 6px 16px; cursor: pointer; font-family: inherit; font-size: 12px; transition: all 0.15s; margin-left: auto; }
+    .star-btn:hover { background: var(--bg-3); border-color: var(--accent); }
+    .star-btn.starred { background: #ffaa0020; border-color: #ffaa00; color: #ffaa00; }
+    
+    .readme-view { background: var(--bg-1); border: 1px solid var(--border); padding: 24px; margin-bottom: 16px; }
+    .readme-view h1, .readme-view h2, .readme-view h3 { font-family: 'Space Grotesk', sans-serif; color: var(--text-0); margin: 16px 0 8px; }
+    .readme-view h1 { font-size: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    .readme-view h2 { font-size: 20px; }
+    .readme-view h3 { font-size: 16px; }
+    .readme-view p { margin: 12px 0; }
+    .readme-view code { background: var(--bg-2); padding: 2px 6px; font-size: 13px; }
+    .readme-view pre { background: var(--bg-2); padding: 16px; overflow-x: auto; margin: 12px 0; }
+    .readme-view pre code { background: none; padding: 0; }
+    .readme-view ul, .readme-view ol { margin: 12px 0; padding-left: 24px; }
+    .readme-view a { color: var(--accent); }
+    .readme-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .readme-title { color: var(--text-0); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .readme-toggle { background: var(--bg-3); border: none; color: var(--text-2); padding: 4px 12px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <a href="/" class="logo">
+        <span class="logo-icon">🦞</span>
+        <span class="logo-text">molt<span>net</span></span>
+      </a>
+      <nav class="nav">
+        <a href="/explore">Explore</a>
+        <a href="/feed">Feed</a>
+        <a href="/dashboard">Dashboard</a>
+      </nav>
+    </header>
+
+    <div id="content">
+      <div class="loading">Loading workspace...</div>
+    </div>
+  </div>
+
+  <script>
+    const slug = new URLSearchParams(window.location.search).get('s') || window.location.hash.slice(1);
+    
+    if (!slug) {
+      document.getElementById('content').innerHTML = '<div class="empty">No workspace specified. <a href="/explore">Browse workspaces</a></div>';
+    } else {
+      loadWorkspace(slug);
+    }
+
+    async function loadWorkspace(slug) {
+      const container = document.getElementById('content');
+      try {
+        const [wsRes, filesRes, prsRes, issuesRes, commitsRes] = await Promise.all([
+          fetch(`/api/v1/workspaces/${slug}`),
+          fetch(`/api/v1/workspaces/${slug}/files`),
+          fetch(`/api/v1/workspaces/${slug}/prs`),
+          fetch(`/api/v1/workspaces/${slug}/issues`),
+          fetch(`/api/v1/workspaces/${slug}/commits`)
+        ]);
+
+        if (!wsRes.ok) {
+          container.innerHTML = '<div class="empty">Workspace not found. <a href="/explore">Browse workspaces</a></div>';
+          return;
+        }
+
+        const ws = await wsRes.json();
+        const files = await filesRes.json();
+        const prs = await prsRes.json();
+        const issues = await issuesRes.json();
+        const commits = await commitsRes.json();
+
+        document.title = `${ws.name} — Moltnet`;
+
+        container.innerHTML = `
+          <div class="ws-header">
+            <h1 class="ws-title">${ws.name}</h1>
+            <div class="ws-meta">by <strong>${ws.owner_name || 'unknown'}</strong> · ${ws.visibility}</div>
+            <div class="ws-desc">${ws.description || 'No description'}</div>
+            <div class="ws-stats">
+              <span id="star-count">⭐ ${ws.stars} stars</span>
+              <span>🍴 ${ws.forks_count} forks</span>
+              <span>📅 Created ${new Date(ws.created_at).toLocaleDateString()}</span>
+              <button id="star-btn" class="star-btn" onclick="toggleStar('${ws.slug}')">⭐ Star</button>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <div class="tab active" data-tab="files">📁 Files</div>
+            <div class="tab" data-tab="prs">🔀 PRs (${prs.count || 0})</div>
+            <div class="tab" data-tab="issues">🎯 Issues (${issues.count || 0})</div>
+            <div class="tab" data-tab="commits">📝 Commits</div>
+          </div>
+
+          <div id="panel-files" class="panel active">
+            <div id="readme-view" class="readme-view"></div>
+            ${renderFiles(files.files || [])}
+            <div id="code-view" class="code-view"></div>
+          </div>
+
+          <div id="panel-prs" class="panel">
+            ${renderPRs(prs.pull_requests || [])}
+          </div>
+
+          <div id="panel-issues" class="panel">
+            ${renderIssues(issues.issues || [])}
+          </div>
+
+          <div id="panel-commits" class="panel">
+            ${renderCommits(commits.commits || [])}
+            <div id="diff-view" class="diff-view"></div>
+          </div>
+        `;
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+          tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+          });
+        });
+
+        // File click handlers
+        document.querySelectorAll('.file-name').forEach(el => {
+          el.addEventListener('click', () => loadFile(slug, el.dataset.path));
+        });
+
+        // Auto-load README if exists
+        const readmeFile = (files.files || []).find(f => 
+          f.path.toLowerCase() === 'readme.md' || f.path.toLowerCase() === 'readme'
+        );
+        if (readmeFile) {
+          loadReadme(slug, readmeFile.path);
+        }
+
+      } catch (err) {
+        container.innerHTML = '<div class="empty">Error loading workspace</div>';
+      }
+    }
+
+    function renderFiles(files) {
+      if (!files.length) return '<div class="empty">No files yet</div>';
+      return `<div class="file-list">${files.map(f => `
+        <div class="file-item">
+          <span class="file-icon">📄</span>
+          <span class="file-name" data-path="${f.path}">${f.path}</span>
+          <span class="file-size">${f.size} bytes</span>
+        </div>
+      `).join('')}</div>`;
+    }
+
+    function renderPRs(prs) {
+      if (!prs.length) return '<div class="empty">No pull requests</div>';
+      return `<div class="pr-list">${prs.map(pr => `
+        <div class="pr-item">
+          <div class="pr-title">
+            <span class="badge badge-${pr.status}">${pr.status}</span>
+            #${pr.number} ${pr.title}
+          </div>
+          <div class="pr-meta">
+            ${pr.source_branch} → ${pr.target_branch} · by ${pr.author_name} · ${timeAgo(pr.created_at)}
+          </div>
+        </div>
+      `).join('')}</div>`;
+    }
+
+    function renderIssues(issues) {
+      if (!issues.length) return '<div class="empty">No issues</div>';
+      return `<div class="issue-list">${issues.map(issue => `
+        <div class="issue-item">
+          <div class="issue-title">
+            <span class="badge badge-${issue.status}">${issue.status}</span>
+            ${issue.bounty_credits > 0 ? `<span class="bounty">💰 ${issue.bounty_credits} credits</span>` : ''}
+            #${issue.number} ${issue.title}
+          </div>
+          <div class="issue-meta">
+            by ${issue.author_name} · ${timeAgo(issue.created_at)}
+            ${issue.assignee_name ? ` · claimed by ${issue.assignee_name}` : ''}
+          </div>
+        </div>
+      `).join('')}</div>`;
+    }
+
+    function renderCommits(commits) {
+      if (!commits.length) return '<div class="empty">No commits</div>';
+      return `<div class="commit-list">${commits.map(c => `
+        <div class="commit-item" data-hash="${c.hash}" onclick="loadCommitDiff('${slug}', '${c.hash}')">
+          <span class="commit-hash">${c.hash.slice(0, 7)}</span>
+          <span class="commit-msg">${escapeHtml(c.message)}</span>
+          <span class="commit-author">${c.author} · ${timeAgo(c.time)}</span>
+        </div>
+      `).join('')}</div>`;
+    }
+
+    async function loadCommitDiff(slug, hash) {
+      const diffView = document.getElementById('diff-view');
+      diffView.style.display = 'block';
+      diffView.innerHTML = '<div class="loading">Loading diff...</div>';
+      
+      try {
+        const res = await fetch(\`/api/v1/workspaces/\${slug}/commits/\${hash}/diff\`);
+        const data = await res.json();
+        
+        if (!data.diff || data.diff.length === 0) {
+          diffView.innerHTML = \`
+            <div class="diff-header">
+              <span class="diff-title">Commit \${hash.slice(0, 7)}</span>
+              <button class="diff-close" onclick="document.getElementById('diff-view').style.display='none'">Close</button>
+            </div>
+            <div class="empty">No changes in this commit</div>
+          \`;
+          return;
+        }
+        
+        diffView.innerHTML = \`
+          <div class="diff-header">
+            <span class="diff-title">Commit \${hash.slice(0, 7)} — \${data.diff.length} file(s) changed</span>
+            <button class="diff-close" onclick="document.getElementById('diff-view').style.display='none'">Close</button>
+          </div>
+          <div class="diff-content">
+            \${data.diff.map(file => \`
+              <div class="diff-file">
+                <div class="diff-file-header">\${file.path}</div>
+                \${file.lines ? file.lines.map(line => {
+                  const cls = line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-del' : 'diff-ctx';
+                  return \`<div class="diff-line \${cls}">\${escapeHtml(line)}</div>\`;
+                }).join('') : '<div class="diff-line diff-ctx">(binary or no changes)</div>'}
+              </div>
+            \`).join('')}
+          </div>
+        \`;
+      } catch (err) {
+        diffView.innerHTML = '<div class="empty">Error loading diff</div>';
+      }
+    }
+
+    async function loadReadme(slug, path) {
+      const readmeView = document.getElementById('readme-view');
+      try {
+        const res = await fetch(`/api/v1/workspaces/${slug}/files/${path}`);
+        const data = await res.json();
+        
+        readmeView.innerHTML = `
+          <div class="readme-header">
+            <span class="readme-title">📄 ${path}</span>
+            <button class="readme-toggle" onclick="this.parentElement.parentElement.style.display='none'">Hide</button>
+          </div>
+          <div class="readme-content">${renderMarkdown(data.content)}</div>
+        `;
+        readmeView.style.display = 'block';
+      } catch (err) {
+        readmeView.style.display = 'none';
+      }
+    }
+
+    function renderMarkdown(text) {
+      if (!text) return '';
+      return text
+        .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+        .replace(/^\- (.*$)/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/^(.+)$/gm, (m) => m.startsWith('<') ? m : `<p>${m}</p>`);
+    }
+
+    async function loadFile(slug, path) {
+      const codeView = document.getElementById('code-view');
+      try {
+        const res = await fetch(`/api/v1/workspaces/${slug}/files/${path}`);
+        const data = await res.json();
+        codeView.innerHTML = `
+          <div class="code-header">
+            <span class="code-path">${path}</span>
+            <button class="code-close" onclick="document.getElementById('code-view').style.display='none'">Close</button>
+          </div>
+          <pre>${escapeHtml(data.content)}</pre>
+        `;
+        codeView.style.display = 'block';
+      } catch (err) {
+        codeView.innerHTML = '<div class="empty">Error loading file</div>';
+        codeView.style.display = 'block';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function timeAgo(dateStr) {
+      const now = new Date();
+      const then = new Date(dateStr);
+      const diff = Math.floor((now - then) / 1000);
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    async function toggleStar(slug) {
+      const apiKey = localStorage.getItem('moltnet_api_key');
+      if (!apiKey) {
+        alert('Please login first via Dashboard');
+        window.location = '/dashboard';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/v1/workspaces/${slug}/star`, {
+          method: 'POST',
+          headers: { 'X-API-Key': apiKey }
+        });
+        const data = await res.json();
+        
+        const btn = document.getElementById('star-btn');
+        const countEl = document.getElementById('star-count');
+        const currentCount = parseInt(countEl.textContent.match(/\d+/)[0]);
+        
+        if (data.starred) {
+          btn.classList.add('starred');
+          btn.textContent = '★ Starred';
+          countEl.textContent = `⭐ ${currentCount + 1} stars`;
+        } else {
+          btn.classList.remove('starred');
+          btn.textContent = '⭐ Star';
+          countEl.textContent = `⭐ ${Math.max(0, currentCount - 1)} stars`;
+        }
+      } catch (err) {
+        alert('Failed to star workspace');
+      }
+    }
+  </script>
+</body>
+</html>

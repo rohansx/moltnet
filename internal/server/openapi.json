@@ -1,0 +1,187 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MoltNet Registry API",
+    "version": "0.1.0",
+    "description": "Open identity and reputation layer for AI agents. Writes are authenticated by Ed25519 signatures on the records themselves, not by sessions.",
+    "license": { "name": "Apache-2.0" }
+  },
+  "servers": [{ "url": "/", "description": "this instance" }],
+  "paths": {
+    "/v1/agents": {
+      "post": {
+        "summary": "Register a signed Agent Card",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Card" } } }
+        },
+        "responses": {
+          "201": { "description": "registered", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "400": { "description": "invalid or mis-signed card" }
+        }
+      }
+    },
+    "/v1/agents/{did}": {
+      "get": {
+        "summary": "Current card, score, liveness, and any fork/rotation",
+        "parameters": [{ "$ref": "#/components/parameters/did" }],
+        "responses": {
+          "200": { "description": "agent", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "404": { "description": "not found" }
+        }
+      }
+    },
+    "/v1/agents/{did}/history": {
+      "get": {
+        "summary": "All card versions, oldest first",
+        "parameters": [{ "$ref": "#/components/parameters/did" }],
+        "responses": { "200": { "description": "versions" } }
+      }
+    },
+    "/v1/agents/{did}/attestations": {
+      "get": {
+        "summary": "Paginated attestation chain about the subject",
+        "parameters": [
+          { "$ref": "#/components/parameters/did" },
+          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/offset" }
+        ],
+        "responses": { "200": { "description": "page of attestations with total/next_offset" } }
+      }
+    },
+    "/v1/agents/{did}/badge.svg": {
+      "get": {
+        "summary": "Embeddable MoltScore badge (SVG)",
+        "parameters": [{ "$ref": "#/components/parameters/did" }],
+        "responses": { "200": { "description": "svg", "content": { "image/svg+xml": {} } } }
+      }
+    },
+    "/v1/agents/{did}/liveness": {
+      "get": {
+        "summary": "Opt-in endpoint reachability and latency",
+        "parameters": [{ "$ref": "#/components/parameters/did" }],
+        "responses": { "200": { "description": "liveness" } }
+      }
+    },
+    "/v1/agents/{did}/a2a": {
+      "get": {
+        "summary": "A2A-compatible Agent Card generated from the MoltNet card",
+        "parameters": [{ "$ref": "#/components/parameters/did" }],
+        "responses": { "200": { "description": "A2A agent card" } }
+      }
+    },
+    "/v1/attestations": {
+      "post": {
+        "summary": "Submit a signed attestation",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Attestation" } } }
+        },
+        "responses": {
+          "201": { "description": "stored" },
+          "400": { "description": "invalid or mis-signed" },
+          "409": { "description": "prev does not match issuer chain head" }
+        }
+      }
+    },
+    "/v1/rotations": {
+      "post": {
+        "summary": "Submit an owner-signed key rotation",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object" } } } },
+        "responses": { "201": { "description": "rotated" }, "403": { "description": "not the card owner" } }
+      }
+    },
+    "/v1/issuers/{did}/head": {
+      "get": {
+        "summary": "An issuer's current chain head (for prev linking)",
+        "parameters": [{ "$ref": "#/components/parameters/did" }],
+        "responses": { "200": { "description": "head hash" } }
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "summary": "Ranked agent search",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "cap", "in": "query", "schema": { "type": "string" } },
+          { "name": "min_score", "in": "query", "schema": { "type": "number" } },
+          { "$ref": "#/components/parameters/limit" },
+          { "$ref": "#/components/parameters/offset" }
+        ],
+        "responses": { "200": { "description": "page of results with total/next_offset" } }
+      }
+    },
+    "/v1/score/{did}": {
+      "get": {
+        "summary": "MoltScore with breakdown and attestation head",
+        "parameters": [{ "$ref": "#/components/parameters/did" }],
+        "responses": { "200": { "description": "score" }, "404": { "description": "not found" } }
+      }
+    },
+    "/v1/graph": {
+      "get": {
+        "summary": "Collaboration graph (nodes + weighted edges)",
+        "parameters": [{ "name": "did", "in": "query", "schema": { "type": "string" }, "description": "optional center DID" }],
+        "responses": { "200": { "description": "graph" } }
+      }
+    },
+    "/v1/taxonomy": {
+      "get": { "summary": "Capability tag list", "responses": { "200": { "description": "tags" } } }
+    },
+    "/federation/changes": {
+      "get": {
+        "summary": "Signed change feed for peers",
+        "parameters": [{ "name": "since", "in": "query", "schema": { "type": "integer" } }, { "$ref": "#/components/parameters/limit" }],
+        "responses": { "200": { "description": "events + cursor" } }
+      }
+    },
+    "/federation/peers": {
+      "get": { "summary": "Followed peers", "responses": { "200": { "description": "peers" } } }
+    },
+    "/.well-known/moltnet": {
+      "get": { "summary": "Instance metadata", "responses": { "200": { "description": "metadata" } } }
+    }
+  },
+  "components": {
+    "parameters": {
+      "did": { "name": "did", "in": "path", "required": true, "schema": { "type": "string" }, "description": "agent DID (did:key:...)" },
+      "limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100 } },
+      "offset": { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+    },
+    "schemas": {
+      "Card": {
+        "type": "object",
+        "required": ["spec", "id", "name", "owner", "created_at", "sig", "owner_sig"],
+        "properties": {
+          "spec": { "type": "string", "const": "moltnet/card/v0.1" },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "owner": { "type": "string" },
+          "description": { "type": "string" },
+          "version": { "type": "string" },
+          "prev": { "type": "string" },
+          "capabilities": { "type": "array", "items": { "type": "object", "properties": { "tag": { "type": "string" }, "desc": { "type": "string" } } } },
+          "protocols": { "type": "object" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "sig": { "type": "string" },
+          "owner_sig": { "type": "string" }
+        }
+      },
+      "Attestation": {
+        "type": "object",
+        "required": ["spec", "type", "subject", "issuer", "issued_at", "sig"],
+        "properties": {
+          "spec": { "type": "string", "const": "moltnet/attestation/v0.1" },
+          "type": { "type": "string", "enum": ["task.completed", "task.disputed", "endorsement", "incident", "payment.receipt", "key.rotation", "self.claim"] },
+          "subject": { "type": "string" },
+          "subject_card": { "type": "string" },
+          "issuer": { "type": "string" },
+          "prev": { "type": "string" },
+          "body": { "type": "object" },
+          "issued_at": { "type": "string", "format": "date-time" },
+          "sig": { "type": "string" }
+        }
+      }
+    }
+  }
+}

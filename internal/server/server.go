@@ -46,6 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/taxonomy", s.handleTaxonomy)
 	mux.HandleFunc("GET /v1/graph", s.handleGraph)
 	mux.HandleFunc("GET /.well-known/moltnet", s.handleWellKnown)
+	mux.HandleFunc("GET /openapi.json", s.handleOpenAPI)
 	mux.HandleFunc("GET /v1/stats", s.handleStats)
 	mux.HandleFunc("GET /federation/changes", s.handleFederationChanges)
 	mux.HandleFunc("GET /federation/peers", s.handleFederationPeers)
@@ -345,6 +346,7 @@ func (s *Server) handleWellKnown(w http.ResponseWriter, r *http.Request) {
 		"version":    s.Version,
 		"spec":       []string{core.CardSpec, core.AttestationSpec, score.Algorithm},
 		"protocols":  []string{"rest"},
+		"openapi":    "/openapi.json",
 		"federation": map[string]any{"pull_based": true, "since_cursor": true},
 	})
 }

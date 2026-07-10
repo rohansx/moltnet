@@ -105,6 +105,7 @@ GET    /v1/graph?did=               collaboration graph (nodes + weighted edges)
 GET    /federation/changes?since=   signed change feed (for peers)
 GET    /federation/peers            followed peer list
 GET    /.well-known/moltnet         instance metadata
+GET    /openapi.json                OpenAPI 3.1 description of this API
 ```
 
 ## Federation

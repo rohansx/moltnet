@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -452,6 +453,39 @@ func TestA2AResolution(t *testing.T) {
 	}
 	if a2a.Moltnet.Verify == "" {
 		t.Fatal("expected x-moltnet.verify link")
+	}
+}
+
+func TestOpenAPISpec(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	resp, err := http.Get(ts.URL + "/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type = %q", ct)
+	}
+	var doc struct {
+		OpenAPI string                 `json:"openapi"`
+		Info    map[string]any         `json:"info"`
+		Paths   map[string]any         `json:"paths"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		t.Fatalf("openapi.json is not valid JSON: %v", err)
+	}
+	if !strings.HasPrefix(doc.OpenAPI, "3.") {
+		t.Fatalf("expected OpenAPI 3.x, got %q", doc.OpenAPI)
+	}
+	for _, p := range []string{"/v1/agents", "/v1/agents/{did}", "/v1/search", "/v1/attestations", "/v1/score/{did}"} {
+		if _, ok := doc.Paths[p]; !ok {
+			t.Fatalf("openapi paths missing %q", p)
+		}
 	}
 }
 

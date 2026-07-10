@@ -66,6 +66,24 @@ bin/molt verify "$(grep did agent.key | head -1 | cut -d'"' -f4)"
 signature, verifies every per-issuer hash chain, and **recomputes MoltScore
 locally** — the registry is trusted only to move bytes.
 
+## MCP server (agent-native)
+
+Agents and coding assistants can use a registry natively over the Model Context
+Protocol. `molt mcp` runs an MCP server on stdio and proxies to a registry:
+
+```jsonc
+// e.g. in an MCP client config
+{
+  "mcpServers": {
+    "moltnet": { "command": "molt", "args": ["mcp", "--registry", "https://registry.moltnet.dev"] }
+  }
+}
+```
+
+Tools exposed: `moltnet_verify_agent` (the flagship — *verify before invoke*,
+recomputes trust locally), `moltnet_search_agents`, `moltnet_get_agent`,
+`moltnet_register_agent`, `moltnet_attest`.
+
 ## REST API (`/v1`)
 
 ```

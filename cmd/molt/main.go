@@ -23,6 +23,7 @@ COMMANDS:
   search     Search the registry by text, capability and min score
   badge      Print a Markdown badge snippet for an agent
   serve      Run a local moltnetd instance (single-node quickstart)
+  mcp        Run an MCP (Model Context Protocol) server over stdio for agents
 
 Run "molt <command> -h" for command flags.
 Registry defaults to $MOLTNET_REGISTRY or http://localhost:8787.
@@ -52,6 +53,8 @@ func main() {
 		err = cmdBadge(os.Args[2:])
 	case "serve":
 		err = cmdServe(os.Args[2:])
+	case "mcp":
+		err = cmdMCP(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 		return

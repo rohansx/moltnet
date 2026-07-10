@@ -209,6 +209,63 @@ func TestKeyRotation(t *testing.T) {
 	}
 }
 
+func TestGraphEndpoint(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	subject, _ := core.GenerateKeyPair()
+	issuer, _ := core.GenerateKeyPair()
+
+	postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, subject, "subject", "code.review"))
+	postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, issuer, "issuer"))
+
+	// Two completed tasks from issuer -> subject should collapse to one weighted edge.
+	head := ""
+	for i := 0; i < 2; i++ {
+		a := core.NewAttestation(core.TypeTaskCompleted, issuer.DID, subject.DID)
+		a.Prev = head
+		if err := a.Sign(issuer.Private); err != nil {
+			t.Fatal(err)
+		}
+		if code, body := postJSON(t, ts.URL+"/v1/attestations", a); code != 201 {
+			t.Fatalf("attest %d: %d %s", i, code, body)
+		}
+		head, _ = a.Hash()
+	}
+
+	var graph struct {
+		Nodes []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"nodes"`
+		Edges []struct {
+			Source string `json:"source"`
+			Target string `json:"target"`
+			Type   string `json:"type"`
+			Count  int    `json:"count"`
+		} `json:"edges"`
+	}
+	if code := getJSON(t, ts.URL+"/v1/graph", &graph); code != 200 {
+		t.Fatalf("graph: %d", code)
+	}
+	if len(graph.Nodes) < 2 {
+		t.Fatalf("expected >=2 nodes, got %d", len(graph.Nodes))
+	}
+	var found bool
+	for _, e := range graph.Edges {
+		if e.Source == issuer.DID && e.Target == subject.DID && e.Type == core.TypeTaskCompleted {
+			found = true
+			if e.Count != 2 {
+				t.Fatalf("expected edge count 2, got %d", e.Count)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected an issuer->subject task.completed edge; edges=%+v", graph.Edges)
+	}
+}
+
 func TestUnknownAgentIs404(t *testing.T) {
 	ts, cleanup := testEnv(t)
 	defer cleanup()

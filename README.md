@@ -99,6 +99,7 @@ GET    /v1/issuers/{did}/head       issuer chain head (for prev linking)
 GET    /v1/search?q=&cap=&min_score=
 GET    /v1/score/{did}              score + breakdown + head hash
 GET    /v1/taxonomy                 capability tag list
+GET    /v1/graph?did=               collaboration graph (nodes + weighted edges)
 GET    /federation/changes?since=   signed change feed (for peers)
 GET    /federation/peers            followed peer list
 GET    /.well-known/moltnet         instance metadata

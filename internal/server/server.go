@@ -40,6 +40,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/search", s.handleSearch)
 	mux.HandleFunc("GET /v1/score/{did}", s.handleScore)
 	mux.HandleFunc("GET /v1/taxonomy", s.handleTaxonomy)
+	mux.HandleFunc("GET /v1/graph", s.handleGraph)
 	mux.HandleFunc("GET /.well-known/moltnet", s.handleWellKnown)
 	mux.HandleFunc("GET /v1/stats", s.handleStats)
 	mux.HandleFunc("GET /federation/changes", s.handleFederationChanges)
@@ -275,6 +276,15 @@ func (s *Server) handleScore(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTaxonomy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"tags": Taxonomy})
+}
+
+func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	nodes, edges, err := s.Store.Graph(r.URL.Query().Get("did"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes, "edges": edges})
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {

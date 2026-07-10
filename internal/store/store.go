@@ -576,6 +576,64 @@ func (s *Store) Search(q, capTag string, minScore float64, limit int) ([]Agent, 
 	return out, rows.Err()
 }
 
+// GraphNode is an agent node in the collaboration graph.
+type GraphNode struct {
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Score float64 `json:"score"`
+}
+
+// GraphEdge is a weighted directed edge (issuer -> subject) of one attestation
+// type, aggregated by count.
+type GraphEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Type   string `json:"type"`
+	Count  int    `json:"count"`
+}
+
+// Graph returns the collaboration graph: registered agents as nodes and
+// attestations aggregated into weighted directed edges. If centerDID is
+// non-empty, only edges touching that DID (and their endpoints) are returned.
+func (s *Store) Graph(centerDID string) ([]GraphNode, []GraphEdge, error) {
+	nodeRows, err := s.db.Query(
+		`SELECT a.did, a.name, COALESCE(s.score,0) FROM agents a LEFT JOIN scores s ON s.did=a.did`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer nodeRows.Close()
+	var nodes []GraphNode
+	for nodeRows.Next() {
+		var n GraphNode
+		if err := nodeRows.Scan(&n.ID, &n.Name, &n.Score); err != nil {
+			return nil, nil, err
+		}
+		nodes = append(nodes, n)
+	}
+
+	q := `SELECT issuer, subject, type, COUNT(*) FROM attestations`
+	var args []any
+	if centerDID != "" {
+		q += ` WHERE issuer = ? OR subject = ?`
+		args = append(args, centerDID, centerDID)
+	}
+	q += ` GROUP BY issuer, subject, type`
+	edgeRows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer edgeRows.Close()
+	var edges []GraphEdge
+	for edgeRows.Next() {
+		var e GraphEdge
+		if err := edgeRows.Scan(&e.Source, &e.Target, &e.Type, &e.Count); err != nil {
+			return nil, nil, err
+		}
+		edges = append(edges, e)
+	}
+	return nodes, edges, edgeRows.Err()
+}
+
 // AgentCount returns the number of registered agents.
 func (s *Store) AgentCount() (int, error) {
 	var n int

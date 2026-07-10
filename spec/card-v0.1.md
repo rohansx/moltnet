@@ -28,6 +28,7 @@ permanent identifier.
 | `owner` | string | ✓ | owner DID |
 | `description` | string | | free text |
 | `version` | string | | agent version |
+| `prev` | string | | hash of the previous card version ("" for genesis) |
 | `capabilities` | array | | `{ "tag": "...", "desc": "..." }`, tag from taxonomy |
 | `protocols` | object | | protocol bindings (`mcp`, `a2a`, `http`, …) |
 | `anchors` | object | | optional on-chain anchor (e.g. `erc8004`) |
@@ -54,6 +55,9 @@ permanent identifier.
   version; history is never destroyed (`GET /v1/agents/{did}/history`).
 - A card with an unreachable endpoint is still valid; liveness is a separate,
   observable signal kept out of MoltScore v1.
+- **Forks.** Card versions chain via `prev`. A valid card whose `prev` is not the
+  current head is a competing branch: the registry stores it, flags a fork, and
+  surfaces it on the profile — it never silently overwrites the head.
 
 ## Example
 

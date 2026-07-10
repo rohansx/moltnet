@@ -35,6 +35,7 @@ type Card struct {
 	Owner        string                 `json:"owner"` // did:key of the owner
 	Description  string                 `json:"description,omitempty"`
 	Version      string                 `json:"version,omitempty"`
+	Prev         string                 `json:"prev,omitempty"` // hash of the previous card version ("" for genesis)
 	Capabilities []Capability           `json:"capabilities,omitempty"`
 	Protocols    map[string]any         `json:"protocols,omitempty"`
 	Anchors      map[string]any         `json:"anchors,omitempty"`

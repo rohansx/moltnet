@@ -266,6 +266,58 @@ func TestGraphEndpoint(t *testing.T) {
 	}
 }
 
+func TestCardForkSurfaced(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	agent, _ := core.GenerateKeyPair()
+
+	genesis := mustCard(t, owner, agent, "genesis")
+	if code, _ := postJSON(t, ts.URL+"/v1/agents", genesis); code != 201 {
+		t.Fatal("genesis register failed")
+	}
+	gh, _ := genesis.Hash()
+
+	// A competing version branching from genesis with a different name.
+	fork := core.NewCard(agent.DID, owner.DID, "fork-branch")
+	fork.Prev = gh
+	fork.Version = "9.9.9"
+	if err := fork.Sign(agent.Private, owner.Private); err != nil {
+		t.Fatal(err)
+	}
+	// It has prev=genesis, but the head is still genesis... make head advance first.
+	update := core.NewCard(agent.DID, owner.DID, "legit-update")
+	update.Prev = gh
+	if err := update.Sign(agent.Private, owner.Private); err != nil {
+		t.Fatal(err)
+	}
+	postJSON(t, ts.URL+"/v1/agents", update) // head -> legit-update
+	postJSON(t, ts.URL+"/v1/agents", fork)   // branches from genesis, not head -> fork
+
+	var resp struct {
+		Card struct {
+			Name string `json:"name"`
+		} `json:"card"`
+		Fork *struct {
+			CompetingHash string `json:"competing_hash"`
+		} `json:"fork"`
+	}
+	if code := getJSON(t, ts.URL+"/v1/agents/"+agent.DID, &resp); code != 200 {
+		t.Fatalf("get: %d", code)
+	}
+	if resp.Card.Name != "legit-update" {
+		t.Fatalf("head should be legit-update, got %q", resp.Card.Name)
+	}
+	if resp.Fork == nil {
+		t.Fatal("expected fork to be surfaced on the agent response")
+	}
+	fh, _ := fork.Hash()
+	if resp.Fork.CompetingHash != fh {
+		t.Fatalf("fork competing hash mismatch")
+	}
+}
+
 func TestUnknownAgentIs404(t *testing.T) {
 	ts, cleanup := testEnv(t)
 	defer cleanup()

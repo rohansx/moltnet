@@ -84,6 +84,13 @@ CREATE TABLE IF NOT EXISTS rotations (
     raw_json  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rot_old ON rotations(old_agent);
+CREATE TABLE IF NOT EXISTS forks (
+    did            TEXT NOT NULL,
+    head_hash      TEXT NOT NULL,
+    competing_hash TEXT NOT NULL,
+    detected_at    TEXT,
+    PRIMARY KEY (did, competing_hash)
+);
 `
 
 // Open opens (creating if needed) a SQLite-backed store at path. Use ":memory:"
@@ -141,6 +148,29 @@ func (s *Store) PutCard(c *core.Card) (bool, error) {
 		return false, tx.Commit() // already current
 	}
 
+	// Fork rule: once an agent exists, a valid card whose `prev` is not the
+	// current head is a competing branch — not a linear update. Store it in
+	// history and flag the fork, but do NOT move the head. (New agents and cards
+	// that chain onto the head advance normally.)
+	isFork := existing != "" && c.Prev != existing
+	if isFork {
+		if _, err = tx.Exec(
+			`INSERT INTO card_history (did, card_hash, card_json, ts) VALUES (?, ?, ?, ?)`,
+			c.ID, hash, string(raw), c.CreatedAt); err != nil {
+			return false, err
+		}
+		if _, err = tx.Exec(
+			`INSERT INTO forks (did, head_hash, competing_hash, detected_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT(did, competing_hash) DO NOTHING`,
+			c.ID, existing, hash, c.CreatedAt); err != nil {
+			return false, err
+		}
+		if err = appendEvent(tx, "card", hash, string(raw), c.CreatedAt); err != nil {
+			return false, err
+		}
+		return true, tx.Commit()
+	}
+
 	_, err = tx.Exec(`
         INSERT INTO agents (did, name, description, capabilities, card_hash, card_json, version, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -163,6 +193,31 @@ func (s *Store) PutCard(c *core.Card) (bool, error) {
 		return false, err
 	}
 	return true, tx.Commit()
+}
+
+// Fork records a detected card-version fork: two competing valid cards for the
+// same DID that branch from the same history point.
+type Fork struct {
+	DID           string `json:"did"`
+	HeadHash      string `json:"head_hash"`
+	CompetingHash string `json:"competing_hash"`
+	DetectedAt    string `json:"detected_at"`
+}
+
+// GetFork returns the most recent fork for a DID, or (nil, nil) if none.
+func (s *Store) GetFork(did string) (*Fork, error) {
+	var f Fork
+	err := s.db.QueryRow(
+		`SELECT did, head_hash, competing_hash, COALESCE(detected_at,'')
+         FROM forks WHERE did = ? ORDER BY detected_at DESC LIMIT 1`, did).
+		Scan(&f.DID, &f.HeadHash, &f.CompetingHash, &f.DetectedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
 }
 
 // appendEvent records a change in the federation event log within a tx.

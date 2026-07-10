@@ -120,6 +120,10 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	out, _ := s.recomputeScore(did)
 	live, _ := s.Store.GetLiveness(did)
 	resp := map[string]any{"card": c, "score": out, "liveness": live}
+	// Surface a card-version fork if one was detected (competing signed versions).
+	if fork, ferr := s.Store.GetFork(did); ferr == nil && fork != nil {
+		resp["fork"] = fork
+	}
 	// Surface whether this identity has been rotated to a newer agent key.
 	if rots, err := s.Store.AllRotations(); err == nil {
 		if current, rerr := core.ResolveCurrentAgent(rots, did); rerr == nil && current != did {

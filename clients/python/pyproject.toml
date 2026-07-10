@@ -1,0 +1,14 @@
+[project]
+name = "moltnet-client"
+version = "0.1.0"
+description = "Dependency-light verification for MoltNet Agent Cards, attestations and MoltScore (pure stdlib, pure-Python Ed25519)."
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["moltnet_client"]

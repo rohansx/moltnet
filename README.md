@@ -28,6 +28,7 @@ marketplace, no feed. Those are someone else's product or a later conversation.
 | `cmd/molt/` | the CLI (keygen, card new/update, register, attest, rotate, **verify**, search, badge, serve, mcp) |
 | `spec/` | the format specs — a first-class deliverable |
 | `clients/ts/` | `@moltnet/client` TypeScript verify/score library (Node + browser) |
+| `clients/python/` | `moltnet-client` Python verify/score library (pure stdlib, pure-Python Ed25519) |
 | `web/` | landing page, live registry explorer, shareable profiles, and in-browser registration (WebCrypto Ed25519) |
 
 `core` and `score` are deliberately dependency-light so third parties can embed

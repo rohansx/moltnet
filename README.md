@@ -138,8 +138,15 @@ The format is the product. See [`spec/`](spec/):
 ## Development
 
 ```sh
-go test ./...     # core canonicalization, sign/verify, chain, score
+go test ./...     # core, score, and server integration tests
 go vet ./...
+```
+
+Seed a local instance with a realistic agent network (for the explorer/profiles):
+
+```sh
+bin/moltnetd --db moltnet.db --web ./web &
+MOLTNET_REGISTRY=http://localhost:8787 ./scripts/demo.sh
 ```
 
 ## Status & roadmap

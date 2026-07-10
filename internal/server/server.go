@@ -178,12 +178,36 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAttestations(w http.ResponseWriter, r *http.Request) {
 	did := r.PathValue("did")
-	atts, err := s.Store.AttestationsForSubject(did)
+	limit, offset := pageParams(r)
+	atts, total, err := s.Store.AttestationsForSubjectPaged(did, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"subject": did, "attestations": atts})
+	if atts == nil {
+		atts = []*core.Attestation{}
+	}
+	resp := map[string]any{
+		"subject": did, "attestations": atts,
+		"total": total, "limit": limit, "offset": offset,
+	}
+	if next := offset + len(atts); next < total {
+		resp["next_offset"] = next
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// pageParams reads limit/offset query params, defaulting limit to 100.
+func pageParams(r *http.Request) (limit, offset int) {
+	limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+	return
 }
 
 func (s *Server) handleBadge(w http.ResponseWriter, r *http.Request) {
@@ -254,13 +278,20 @@ func (s *Server) handleIssuerHead(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	minScore, _ := strconv.ParseFloat(q.Get("min_score"), 64)
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	results, err := s.Store.Search(q.Get("q"), q.Get("cap"), minScore, limit)
+	limit, offset := pageParams(r)
+	results, total, err := s.Store.Search(q.Get("q"), q.Get("cap"), minScore, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": len(results), "results": results})
+	resp := map[string]any{
+		"count": len(results), "results": results,
+		"total": total, "limit": limit, "offset": offset,
+	}
+	if next := offset + len(results); next < total {
+		resp["next_offset"] = next
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleScore(w http.ResponseWriter, r *http.Request) {

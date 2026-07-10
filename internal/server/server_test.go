@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/moltnet/moltnet/core"
 	"github.com/moltnet/moltnet/internal/store"
@@ -315,6 +316,86 @@ func TestCardForkSurfaced(t *testing.T) {
 	fh, _ := fork.Hash()
 	if resp.Fork.CompetingHash != fh {
 		t.Fatalf("fork competing hash mismatch")
+	}
+}
+
+func TestAttestationPagination(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	subject, _ := core.GenerateKeyPair()
+	issuer, _ := core.GenerateKeyPair()
+	postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, subject, "subject"))
+	postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, issuer, "issuer"))
+
+	const total = 5
+	head := ""
+	for i := 0; i < total; i++ {
+		a := core.NewAttestation(core.TypeTaskCompleted, issuer.DID, subject.DID)
+		a.Prev = head
+		a.IssuedAt = time.Now().UTC().Add(time.Duration(i) * time.Second).Format(time.RFC3339)
+		if err := a.Sign(issuer.Private); err != nil {
+			t.Fatal(err)
+		}
+		if code, body := postJSON(t, ts.URL+"/v1/attestations", a); code != 201 {
+			t.Fatalf("attest %d: %d %s", i, code, body)
+		}
+		head, _ = a.Hash()
+	}
+
+	type page struct {
+		Attestations []core.Attestation `json:"attestations"`
+		Total        int                `json:"total"`
+		Limit        int                `json:"limit"`
+		Offset       int                `json:"offset"`
+		NextOffset   *int               `json:"next_offset"`
+	}
+	var p1 page
+	getJSON(t, ts.URL+"/v1/agents/"+subject.DID+"/attestations?limit=2&offset=0", &p1)
+	if p1.Total != total {
+		t.Fatalf("total = %d, want %d", p1.Total, total)
+	}
+	if len(p1.Attestations) != 2 {
+		t.Fatalf("page 1 len = %d, want 2", len(p1.Attestations))
+	}
+	if p1.NextOffset == nil || *p1.NextOffset != 2 {
+		t.Fatalf("next_offset = %v, want 2", p1.NextOffset)
+	}
+
+	// Last page: offset 4 -> 1 item, no next.
+	var p3 page
+	getJSON(t, ts.URL+"/v1/agents/"+subject.DID+"/attestations?limit=2&offset=4", &p3)
+	if len(p3.Attestations) != 1 {
+		t.Fatalf("last page len = %d, want 1", len(p3.Attestations))
+	}
+	if p3.NextOffset != nil {
+		t.Fatalf("expected no next_offset on last page, got %v", *p3.NextOffset)
+	}
+}
+
+func TestSearchPagination(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+	owner, _ := core.GenerateKeyPair()
+	for i := 0; i < 5; i++ {
+		agent, _ := core.GenerateKeyPair()
+		postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, agent, "searchable-agent", "code.review"))
+	}
+	var resp struct {
+		Count      int  `json:"count"`
+		Total      int  `json:"total"`
+		NextOffset *int `json:"next_offset"`
+	}
+	getJSON(t, ts.URL+"/v1/search?cap=code.review&limit=2&offset=0", &resp)
+	if resp.Total != 5 {
+		t.Fatalf("total = %d, want 5", resp.Total)
+	}
+	if resp.Count != 2 {
+		t.Fatalf("count = %d, want 2 (page size)", resp.Count)
+	}
+	if resp.NextOffset == nil || *resp.NextOffset != 2 {
+		t.Fatalf("next_offset = %v, want 2", resp.NextOffset)
 	}
 }
 

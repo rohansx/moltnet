@@ -444,9 +444,29 @@ func (s *Store) SetPeerCursor(peer string, cursor int64) error {
 	return err
 }
 
-// AttestationsForSubject returns every attestation about a subject, oldest first.
+// AttestationsForSubject returns every attestation about a subject, oldest
+// first. Used for scoring and verification, which need the full set.
 func (s *Store) AttestationsForSubject(did string) ([]*core.Attestation, error) {
 	return s.queryAttestations(`SELECT raw_json FROM attestations WHERE subject = ? ORDER BY issued_at ASC`, did)
+}
+
+// AttestationsForSubjectPaged returns a page of attestations (oldest first) plus
+// the total count for the subject.
+func (s *Store) AttestationsForSubjectPaged(did string, limit, offset int) ([]*core.Attestation, int, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var total int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM attestations WHERE subject = ?`, did).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	atts, err := s.queryAttestations(
+		`SELECT raw_json FROM attestations WHERE subject = ? ORDER BY issued_at ASC LIMIT ? OFFSET ?`,
+		did, limit, offset)
+	return atts, total, err
 }
 
 func (s *Store) queryAttestations(q string, args ...any) ([]*core.Attestation, error) {
@@ -596,24 +616,36 @@ type Agent struct {
 	Score        float64  `json:"score"`
 }
 
-// Search returns agents matching a free-text query, an optional capability tag,
-// and a minimum score, ordered by score descending.
-func (s *Store) Search(q, capTag string, minScore float64, limit int) ([]Agent, error) {
-	if limit <= 0 {
+// Search returns a page of agents matching a free-text query, an optional
+// capability tag, and a minimum score, ordered by score descending. It also
+// returns the total number of matches (ignoring limit/offset) for pagination.
+func (s *Store) Search(q, capTag string, minScore float64, limit, offset int) ([]Agent, int, error) {
+	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	sqlText := `
-        SELECT a.did, a.name, COALESCE(a.description,''), COALESCE(a.capabilities,''),
-               COALESCE(s.score, 0)
-        FROM agents a LEFT JOIN scores s ON s.did = a.did
+	if offset < 0 {
+		offset = 0
+	}
+	where := `
         WHERE (? = '' OR a.name LIKE '%'||?||'%' OR a.description LIKE '%'||?||'%' OR a.capabilities LIKE '%'||?||'%')
           AND (? = '' OR a.capabilities LIKE '%'||?||'%')
-          AND COALESCE(s.score,0) >= ?
-        ORDER BY COALESCE(s.score,0) DESC
-        LIMIT ?`
-	rows, err := s.db.Query(sqlText, q, q, q, q, capTag, capTag, minScore, limit)
+          AND COALESCE(s.score,0) >= ?`
+	filterArgs := []any{q, q, q, q, capTag, capTag, minScore}
+
+	var total int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM agents a LEFT JOIN scores s ON s.did=a.did`+where, filterArgs...).
+		Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := s.db.Query(
+		`SELECT a.did, a.name, COALESCE(a.description,''), COALESCE(a.capabilities,''), COALESCE(s.score,0)
+         FROM agents a LEFT JOIN scores s ON s.did = a.did`+where+
+			` ORDER BY COALESCE(s.score,0) DESC LIMIT ? OFFSET ?`,
+		append(append([]any{}, filterArgs...), limit, offset)...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	var out []Agent
@@ -621,14 +653,14 @@ func (s *Store) Search(q, capTag string, minScore float64, limit int) ([]Agent, 
 		var a Agent
 		var caps string
 		if err := rows.Scan(&a.DID, &a.Name, &a.Description, &caps, &a.Score); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if caps != "" {
 			a.Capabilities = splitFields(caps)
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // GraphNode is an agent node in the collaboration graph.

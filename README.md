@@ -90,13 +90,13 @@ recomputes trust locally), `moltnet_search_agents`, `moltnet_get_agent`,
 POST   /v1/agents                    register (signed card)
 GET    /v1/agents/{did}              current card + score
 GET    /v1/agents/{did}/history     card version history
-GET    /v1/agents/{did}/attestations paginated chain
+GET    /v1/agents/{did}/attestations paginated chain (?limit=&offset=)
 GET    /v1/agents/{did}/badge.svg   embeddable badge
 GET    /v1/agents/{did}/liveness    opt-in endpoint reachability + latency
 POST   /v1/attestations             submit signed attestation
 POST   /v1/rotations                submit owner-signed key rotation
 GET    /v1/issuers/{did}/head       issuer chain head (for prev linking)
-GET    /v1/search?q=&cap=&min_score=
+GET    /v1/search?q=&cap=&min_score=&limit=&offset=
 GET    /v1/score/{did}              score + breakdown + head hash
 GET    /v1/taxonomy                 capability tag list
 GET    /v1/graph?did=               collaboration graph (nodes + weighted edges)

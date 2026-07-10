@@ -1,0 +1,163 @@
+[
+  {
+    "now": "2026-01-01T00:00:00Z",
+    "attestations": null,
+    "expected": {
+      "score": 11.9,
+      "inputs": {
+        "completions": 0,
+        "disputes": 0,
+        "incidents": 0,
+        "endorsements": 0,
+        "receipts": 0,
+        "distinct_issuers": 0
+      }
+    }
+  },
+  {
+    "now": "2026-01-01T00:00:00Z",
+    "attestations": [
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zA",
+        "subject": "did:key:zSubject",
+        "type": "task.completed"
+      }
+    ],
+    "expected": {
+      "score": 29.1,
+      "inputs": {
+        "completions": 1,
+        "disputes": 0,
+        "incidents": 0,
+        "endorsements": 0,
+        "receipts": 0,
+        "distinct_issuers": 1
+      }
+    }
+  },
+  {
+    "now": "2026-01-01T00:00:00Z",
+    "attestations": [
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zA",
+        "subject": "did:key:zSubject",
+        "type": "task.completed"
+      },
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zB",
+        "subject": "did:key:zSubject",
+        "type": "task.completed"
+      },
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zC",
+        "subject": "did:key:zSubject",
+        "type": "endorsement"
+      }
+    ],
+    "expected": {
+      "score": 50.3,
+      "inputs": {
+        "completions": 2,
+        "disputes": 0,
+        "incidents": 0,
+        "endorsements": 1,
+        "receipts": 0,
+        "distinct_issuers": 3
+      }
+    }
+  },
+  {
+    "now": "2026-01-01T00:00:00Z",
+    "attestations": [
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zA",
+        "subject": "did:key:zSubject",
+        "type": "task.completed"
+      },
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zB",
+        "subject": "did:key:zSubject",
+        "type": "incident"
+      }
+    ],
+    "expected": {
+      "score": 5.3,
+      "inputs": {
+        "completions": 1,
+        "disputes": 0,
+        "incidents": 1,
+        "endorsements": 0,
+        "receipts": 0,
+        "distinct_issuers": 1
+      }
+    }
+  },
+  {
+    "now": "2026-01-01T00:00:00Z",
+    "attestations": [
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zA",
+        "subject": "did:key:zSubject",
+        "type": "self.claim"
+      },
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zA",
+        "subject": "did:key:zSubject",
+        "type": "self.claim"
+      }
+    ],
+    "expected": {
+      "score": 11.9,
+      "inputs": {
+        "completions": 0,
+        "disputes": 0,
+        "incidents": 0,
+        "endorsements": 0,
+        "receipts": 0,
+        "distinct_issuers": 0
+      }
+    }
+  },
+  {
+    "now": "2026-01-01T00:00:00Z",
+    "attestations": [
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zA",
+        "subject": "did:key:zSubject",
+        "type": "task.completed"
+      },
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zA",
+        "subject": "did:key:zSubject",
+        "type": "task.completed"
+      },
+      {
+        "issued_at": "2026-01-01T00:00:00Z",
+        "issuer": "did:key:zB",
+        "subject": "did:key:zSubject",
+        "type": "payment.receipt"
+      }
+    ],
+    "expected": {
+      "score": 47.8,
+      "inputs": {
+        "completions": 2,
+        "disputes": 0,
+        "incidents": 0,
+        "endorsements": 0,
+        "receipts": 1,
+        "distinct_issuers": 2
+      }
+    }
+  }
+]

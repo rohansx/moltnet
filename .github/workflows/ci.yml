@@ -22,3 +22,22 @@ jobs:
         run: |
           go build -o bin/moltnetd ./cmd/moltnetd
           go build -o bin/molt ./cmd/molt
+
+  clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: TypeScript client (build + conformance)
+        working-directory: clients/ts
+        run: |
+          npx --yes typescript@5 tsc -p tsconfig.json
+          node --test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Python client (conformance, stdlib only)
+        working-directory: clients/python
+        run: python3 -m unittest -v

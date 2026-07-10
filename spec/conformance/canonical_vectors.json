@@ -1,0 +1,54 @@
+[
+  {
+    "input": {
+      "a": [
+        3,
+        2,
+        1
+      ],
+      "b": 1,
+      "c": {
+        "a": null,
+        "z": true
+      }
+    },
+    "expected": "{\"a\":[3,2,1],\"b\":1,\"c\":{\"a\":null,\"z\":true}}"
+  },
+  {
+    "input": {
+      "back": "a\\b",
+      "quote": "a\"b",
+      "tab": "a\tb",
+      "unicode": "héllo"
+    },
+    "expected": "{\"back\":\"a\\\\b\",\"quote\":\"a\\\"b\",\"tab\":\"a\\tb\",\"unicode\":\"héllo\"}"
+  },
+  {
+    "input": {
+      "arr": [
+        {
+          "k": 2
+        },
+        {
+          "k": 1
+        }
+      ],
+      "nested": {
+        "x": {
+          "y": 1
+        }
+      }
+    },
+    "expected": "{\"arr\":[{\"k\":2},{\"k\":1}],\"nested\":{\"x\":{\"y\":1}}}"
+  },
+  {
+    "input": {
+      "empty": "",
+      "flag": false,
+      "id": "did:key:z6Mk",
+      "n": 10,
+      "spec": "moltnet/card/v0.1"
+    },
+    "expected": "{\"empty\":\"\",\"flag\":false,\"id\":\"did:key:z6Mk\",\"n\":10,\"spec\":\"moltnet/card/v0.1\"}"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "name": "@moltnet/client",
+  "version": "0.1.0",
+  "description": "Dependency-light verification for MoltNet Agent Cards, attestations and MoltScore (Node + browser).",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test"
+  },
+  "license": "Apache-2.0",
+  "engines": { "node": ">=20" }
+}

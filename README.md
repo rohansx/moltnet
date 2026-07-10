@@ -27,6 +27,7 @@ marketplace, no feed. Those are someone else's product or a later conversation.
 | `cmd/moltnetd/` | the registry server binary |
 | `cmd/molt/` | the CLI (keygen, card, register, attest, rotate, **verify**, search, badge, serve, mcp) |
 | `spec/` | the format specs — a first-class deliverable |
+| `clients/ts/` | `@moltnet/client` TypeScript verify/score library (Node + browser) |
 | `web/` | landing page, live registry explorer, shareable profiles, and in-browser registration (WebCrypto Ed25519) |
 
 `core` and `score` are deliberately dependency-light so third parties can embed

@@ -5,6 +5,7 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,6 +25,8 @@ type Server struct {
 	// RateLimitPerMin caps write (POST/PUT/PATCH/DELETE) requests per client IP
 	// per minute. 0 disables rate limiting. Reads are never limited.
 	RateLimitPerMin int
+	// LogWriter, if set, receives one structured JSON log line per request.
+	LogWriter io.Writer
 }
 
 // Handler builds the HTTP router. Go 1.22+ method+path patterns keep us on the
@@ -62,7 +65,9 @@ func (s *Server) Handler() http.Handler {
 		rl := newRateLimiter(s.RateLimitPerMin, float64(s.RateLimitPerMin)/60.0)
 		handler = rateLimitWrites(rl, handler)
 	}
-	return withCORS(handler)
+	handler = withCORS(handler)
+	// Logging is outermost so it records the final status (incl. 429/CORS).
+	return withLogging(s.LogWriter, handler)
 }
 
 func withCORS(h http.Handler) http.Handler {

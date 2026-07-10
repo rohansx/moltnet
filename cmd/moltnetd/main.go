@@ -39,6 +39,7 @@ func main() {
 		probe  = flag.Duration("probe-interval", 5*time.Minute, "liveness probe sweep interval (0 disables)")
 		fedInt = flag.Duration("federation-interval", 30*time.Second, "federation pull interval (0 disables)")
 		rlimit = flag.Int("rate-limit", 0, "max write requests per client IP per minute (0 disables)")
+		logReq = flag.Bool("log-requests", false, "write one structured JSON log line per request to stderr")
 	)
 	var peers peerList
 	flag.Var(&peers, "peer", "federation peer base URL to follow (repeatable)")
@@ -51,6 +52,9 @@ func main() {
 	defer st.Close()
 
 	srv := &server.Server{Store: st, WebDir: *webDir, Name: *name, Version: version, Peers: peers, RateLimitPerMin: *rlimit}
+	if *logReq {
+		srv.LogWriter = os.Stderr
+	}
 	srv.StartLivenessProber(*probe)
 	srv.StartFederation(*fedInt)
 

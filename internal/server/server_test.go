@@ -489,6 +489,20 @@ func TestOpenAPISpec(t *testing.T) {
 	}
 }
 
+func TestHealthz(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+	var resp struct {
+		Status string `json:"status"`
+	}
+	if code := getJSON(t, ts.URL+"/healthz", &resp); code != 200 {
+		t.Fatalf("healthz status %d", code)
+	}
+	if resp.Status != "ok" {
+		t.Fatalf("healthz body = %q", resp.Status)
+	}
+}
+
 func TestUnknownAgentIs404(t *testing.T) {
 	ts, cleanup := testEnv(t)
 	defer cleanup()

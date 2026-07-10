@@ -48,6 +48,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /.well-known/moltnet", s.handleWellKnown)
 	mux.HandleFunc("GET /openapi.json", s.handleOpenAPI)
 	mux.HandleFunc("GET /v1/stats", s.handleStats)
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /federation/changes", s.handleFederationChanges)
 	mux.HandleFunc("GET /federation/peers", s.handleFederationPeers)
 
@@ -332,6 +333,15 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes, "edges": edges})
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	// A cheap DB round-trip confirms the store is reachable, not just the process.
+	if _, err := s.Store.AgentCount(); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "degraded", "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {

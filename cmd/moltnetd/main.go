@@ -5,11 +5,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/moltnet/moltnet/internal/server"
@@ -58,7 +61,30 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "  listening on http://localhost%s\n", *addr)
 
-	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
+	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler()}
+
+	// Serve until a termination signal, then shut down gracefully so in-flight
+	// requests finish and the SQLite WAL is checkpointed cleanly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serveErr <- err
+		}
+	}()
+
+	select {
+	case err := <-serveErr:
 		log.Fatalf("server: %v", err)
+	case <-ctx.Done():
+		fmt.Fprintln(os.Stderr, "\nshutting down gracefully…")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+			log.Fatalf("graceful shutdown failed: %v", err)
+		}
+		fmt.Fprintln(os.Stderr, "stopped")
 	}
 }

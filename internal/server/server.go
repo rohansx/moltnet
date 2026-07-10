@@ -17,9 +17,10 @@ import (
 // Server holds the store and configuration for the registry.
 type Server struct {
 	Store   *store.Store
-	WebDir  string // optional path to static web assets ("" disables)
+	WebDir  string   // optional path to static web assets ("" disables)
 	Name    string
 	Version string
+	Peers   []string // federation peers this instance follows (allowlist)
 }
 
 // Handler builds the HTTP router. Go 1.22+ method+path patterns keep us on the
@@ -40,6 +41,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/taxonomy", s.handleTaxonomy)
 	mux.HandleFunc("GET /.well-known/moltnet", s.handleWellKnown)
 	mux.HandleFunc("GET /v1/stats", s.handleStats)
+	mux.HandleFunc("GET /federation/changes", s.handleFederationChanges)
+	mux.HandleFunc("GET /federation/peers", s.handleFederationPeers)
 
 	if s.WebDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.WebDir)))
@@ -82,7 +85,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.Store.PutCard(&c); err != nil {
+	if _, err := s.Store.PutCard(&c); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -170,7 +173,7 @@ func (s *Server) handleAttest(w http.ResponseWriter, r *http.Request) {
 			"attestation prev does not match issuer chain head; expected \""+head+"\"")
 		return
 	}
-	if err := s.Store.PutAttestation(&a); err != nil {
+	if _, err := s.Store.PutAttestation(&a); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

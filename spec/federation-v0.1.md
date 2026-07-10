@@ -1,8 +1,9 @@
 # Federation — `moltnet/federation/v0.1`
 
-Status: **draft / roadmap.** Federation is a v0.2 deliverable. This document
-records the intended design; the v0.1 server exposes instance metadata at
-`/.well-known/moltnet` but does not yet sync with peers.
+Status: **implemented.** `moltnetd` exposes a signed change feed at
+`GET /federation/changes?since=` and `GET /federation/peers`, and follows peers
+given via `--peer` on a `--federation-interval` loop, re-verifying every record
+on ingest. Signed conflict/fork surfacing is the remaining v0.2 refinement.
 
 ## Model
 

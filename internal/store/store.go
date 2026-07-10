@@ -64,6 +64,17 @@ CREATE TABLE IF NOT EXISTS liveness (
     latency_ms  INTEGER,
     checked_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS events (
+    seq      INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind     TEXT NOT NULL,       -- 'card' | 'attestation'
+    hash     TEXT NOT NULL,       -- content hash of the record
+    record   TEXT NOT NULL,       -- the full signed JSON record
+    ts       TEXT
+);
+CREATE TABLE IF NOT EXISTS peer_cursors (
+    peer   TEXT PRIMARY KEY,
+    cursor INTEGER NOT NULL DEFAULT 0
+);
 `
 
 // Open opens (creating if needed) a SQLite-backed store at path. Use ":memory:"
@@ -98,20 +109,28 @@ func capabilityBlob(c *core.Card) string {
 }
 
 // PutCard inserts or updates an agent's current card and appends to history.
-func (s *Store) PutCard(c *core.Card) error {
+// It is idempotent: if the stored card already has this exact hash, it is a
+// no-op and reports changed=false (so federation re-syncs don't amplify).
+func (s *Store) PutCard(c *core.Card) (bool, error) {
 	hash, err := c.Hash()
 	if err != nil {
-		return err
+		return false, err
 	}
 	raw, err := json.Marshal(c)
 	if err != nil {
-		return err
+		return false, err
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback()
+
+	var existing string
+	_ = tx.QueryRow(`SELECT card_hash FROM agents WHERE did = ?`, c.ID).Scan(&existing)
+	if existing == hash {
+		return false, tx.Commit() // already current
+	}
 
 	_, err = tx.Exec(`
         INSERT INTO agents (did, name, description, capabilities, card_hash, card_json, version, created_at, updated_at)
@@ -124,14 +143,24 @@ func (s *Store) PutCard(c *core.Card) error {
 		c.ID, c.Name, c.Description, capabilityBlob(c), hash, string(raw), c.Version,
 		c.CreatedAt, c.CreatedAt)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, err = tx.Exec(
 		`INSERT INTO card_history (did, card_hash, card_json, ts) VALUES (?, ?, ?, ?)`,
 		c.ID, hash, string(raw), c.CreatedAt); err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit()
+	if err = appendEvent(tx, "card", hash, string(raw), c.CreatedAt); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+// appendEvent records a change in the federation event log within a tx.
+func appendEvent(tx *sql.Tx, kind, hash, record, ts string) error {
+	_, err := tx.Exec(`INSERT INTO events (kind, hash, record, ts) VALUES (?, ?, ?, ?)`,
+		kind, hash, record, ts)
+	return err
 }
 
 // GetCard returns the current card for a DID, or (nil, nil) if not found.
@@ -202,20 +231,97 @@ func (s *Store) IssuerHead(issuer string) (string, error) {
 	return lastHash, rows.Err()
 }
 
-// PutAttestation stores a verified attestation.
-func (s *Store) PutAttestation(a *core.Attestation) error {
+// PutAttestation stores a verified attestation. Idempotent on content hash: a
+// duplicate (e.g. re-synced from a peer) is ignored and reports inserted=false.
+func (s *Store) PutAttestation(a *core.Attestation) (bool, error) {
 	hash, err := a.Hash()
 	if err != nil {
-		return err
+		return false, err
 	}
 	raw, err := json.Marshal(a)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
 		`INSERT INTO attestations (hash, issuer, subject, type, prev, issued_at, raw_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(hash) DO NOTHING`,
 		hash, a.Issuer, a.Subject, a.Type, a.Prev, a.IssuedAt, string(raw))
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return false, tx.Commit() // already have it
+	}
+	if err = appendEvent(tx, "attestation", hash, string(raw), a.IssuedAt); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+// Event is a single entry in the federation change feed.
+type Event struct {
+	Seq    int64           `json:"seq"`
+	Kind   string          `json:"kind"`
+	Hash   string          `json:"hash"`
+	Record json.RawMessage `json:"record"`
+}
+
+// Changes returns federation events with seq greater than since, oldest first.
+func (s *Store) Changes(since int64, limit int) ([]Event, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	rows, err := s.db.Query(
+		`SELECT seq, kind, hash, record FROM events WHERE seq > ? ORDER BY seq ASC LIMIT ?`,
+		since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Event
+	for rows.Next() {
+		var e Event
+		var record string
+		if err := rows.Scan(&e.Seq, &e.Kind, &e.Hash, &record); err != nil {
+			return nil, err
+		}
+		e.Record = json.RawMessage(record)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// LatestSeq returns the highest event sequence number (0 if none).
+func (s *Store) LatestSeq() (int64, error) {
+	var seq sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MAX(seq) FROM events`).Scan(&seq); err != nil {
+		return 0, err
+	}
+	return seq.Int64, nil
+}
+
+// GetPeerCursor / SetPeerCursor track how far this instance has synced a peer.
+func (s *Store) GetPeerCursor(peer string) (int64, error) {
+	var c int64
+	err := s.db.QueryRow(`SELECT cursor FROM peer_cursors WHERE peer = ?`, peer).Scan(&c)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return c, err
+}
+
+func (s *Store) SetPeerCursor(peer string, cursor int64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO peer_cursors (peer, cursor) VALUES (?, ?)
+         ON CONFLICT(peer) DO UPDATE SET cursor=excluded.cursor`, peer, cursor)
 	return err
 }
 

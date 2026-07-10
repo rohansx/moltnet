@@ -98,7 +98,23 @@ GET    /v1/issuers/{did}/head       issuer chain head (for prev linking)
 GET    /v1/search?q=&cap=&min_score=
 GET    /v1/score/{did}              score + breakdown + head hash
 GET    /v1/taxonomy                 capability tag list
+GET    /federation/changes?since=   signed change feed (for peers)
+GET    /federation/peers            followed peer list
 GET    /.well-known/moltnet         instance metadata
+```
+
+## Federation
+
+Instances federate pull-based: run a follower with `--peer`, and it pulls each
+peer's signed change feed, **re-verifies every record**, and ingests
+idempotently. A card synced from a peer is exactly as verifiable as one
+submitted directly — trust lives in signatures, not the transport, so a tampered
+record from a malicious peer is dropped on ingest.
+
+```sh
+# instance A is the source; instance B follows it
+moltnetd --db a.db --addr :8830
+moltnetd --db b.db --addr :8831 --peer http://localhost:8830 --federation-interval 30s
 ```
 
 Writes require signatures; the server holds no user credentials for the core
@@ -131,8 +147,11 @@ go vet ./...
 **v0.1 (this repo):** card + attestation formats, `moltnetd` with SQLite + REST
 + verification + search, the `molt` CLI, badge SVGs, web UI.
 
-**v0.2:** federation between instances, MCP server surface, optional ERC-8004
-anchoring, liveness probing, attestation-graph explorer.
+**Shipped in v0.1:** MCP server surface, pull-based federation, opt-in liveness
+probing, shareable profiles with in-browser verification.
+
+**v0.2:** optional ERC-8004 anchoring, attestation-graph explorer, signed
+card-fork surfacing, MCP registry auto-emit.
 
 Not in scope (by design): payments/escrow, task marketplace, social feed, swarm
 composer. One primitive done properly.

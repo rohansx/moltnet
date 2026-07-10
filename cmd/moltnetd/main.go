@@ -35,6 +35,7 @@ func main() {
 		name   = flag.String("name", "moltnet local instance", "instance name in /.well-known/moltnet")
 		probe  = flag.Duration("probe-interval", 5*time.Minute, "liveness probe sweep interval (0 disables)")
 		fedInt = flag.Duration("federation-interval", 30*time.Second, "federation pull interval (0 disables)")
+		rlimit = flag.Int("rate-limit", 0, "max write requests per client IP per minute (0 disables)")
 	)
 	var peers peerList
 	flag.Var(&peers, "peer", "federation peer base URL to follow (repeatable)")
@@ -46,7 +47,7 @@ func main() {
 	}
 	defer st.Close()
 
-	srv := &server.Server{Store: st, WebDir: *webDir, Name: *name, Version: version, Peers: peers}
+	srv := &server.Server{Store: st, WebDir: *webDir, Name: *name, Version: version, Peers: peers, RateLimitPerMin: *rlimit}
 	srv.StartLivenessProber(*probe)
 	srv.StartFederation(*fedInt)
 

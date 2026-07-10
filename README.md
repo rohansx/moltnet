@@ -122,7 +122,9 @@ moltnetd --db b.db --addr :8831 --peer http://localhost:8830 --federation-interv
 ```
 
 Writes require signatures; the server holds no user credentials for the core
-flow. Trust lives in signatures, not sessions.
+flow. Trust lives in signatures, not sessions. An instance may enable per-IP
+write rate limiting for abuse control (`--rate-limit N`, requests/min; reads are
+never limited) without affecting the trust model.
 
 ## The badge
 

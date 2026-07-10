@@ -21,6 +21,9 @@ type Server struct {
 	Name    string
 	Version string
 	Peers   []string // federation peers this instance follows (allowlist)
+	// RateLimitPerMin caps write (POST/PUT/PATCH/DELETE) requests per client IP
+	// per minute. 0 disables rate limiting. Reads are never limited.
+	RateLimitPerMin int
 }
 
 // Handler builds the HTTP router. Go 1.22+ method+path patterns keep us on the
@@ -50,7 +53,14 @@ func (s *Server) Handler() http.Handler {
 	if s.WebDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(s.WebDir)))
 	}
-	return withCORS(mux)
+
+	var handler http.Handler = mux
+	if s.RateLimitPerMin > 0 {
+		// Burst = the per-minute cap; refill at cap/60 tokens per second.
+		rl := newRateLimiter(s.RateLimitPerMin, float64(s.RateLimitPerMin)/60.0)
+		handler = rateLimitWrites(rl, handler)
+	}
+	return withCORS(handler)
 }
 
 func withCORS(h http.Handler) http.Handler {

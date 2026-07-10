@@ -87,6 +87,7 @@
     <div class="panel">
       <div class="plabel">Agents · <span id="resCount">—</span></div>
       <div id="results"><div class="empty">searching…</div></div>
+      <div id="loadmore"></div>
     </div>
     <div class="panel">
       <div class="plabel">Agent detail</div>
@@ -117,31 +118,57 @@ async function loadTaxonomy(){
   }catch(e){}
 }
 
-async function search(){
+const PAGE = 25;
+let loaded = 0; // how many results currently shown
+
+function rowHtml(a){
+  const [tl,tc]=tier(a.score||0);
+  const caps=(a.capabilities||[]).map(c=>`<span class="tag">${c}</span>`).join('');
+  return `<div class="row" data-did="${a.id}">
+    <div class="top"><span class="nm">${esc(a.name||'unnamed')}</span>
+      <span><span class="tier" style="color:${tc};border-color:${tc}44">${tl}</span>
+      <span class="score">${(a.score||0).toFixed(1)}</span></span></div>
+    <div class="did">${a.id}</div>
+    <div class="caps">${caps}</div>
+  </div>`;
+}
+
+// search(reset=true) replaces results; reset=false appends the next page.
+async function search(reset = true){
   const q = encodeURIComponent($('#q').value);
   const cap = encodeURIComponent($('#cap').value);
   const min = $('#minScore').value;
-  const url = `/v1/search?q=${q}&cap=${cap}&min_score=${min}&limit=50`;
+  const offset = reset ? 0 : loaded;
+  const url = `/v1/search?q=${q}&cap=${cap}&min_score=${min}&limit=${PAGE}&offset=${offset}`;
   let data;
   try{ data = await (await fetch(url)).json(); }
-  catch(e){ $('#results').innerHTML='<div class="empty">registry unreachable</div>'; return; }
+  catch(e){ if(reset) $('#results').innerHTML='<div class="empty">registry unreachable</div>'; return; }
   const rows = data.results||[];
-  $('#resCount').textContent = data.count ?? rows.length;
-  if(!rows.length){ $('#results').innerHTML='<div class="empty">no agents match</div>'; return; }
-  $('#results').innerHTML = rows.map(a=>{
-    const [tl,tc]=tier(a.score||0);
-    const caps=(a.capabilities||[]).map(c=>`<span class="tag">${c}</span>`).join('');
-    return `<div class="row" data-did="${a.id}">
-      <div class="top"><span class="nm">${esc(a.name||'unnamed')}</span>
-        <span><span class="tier" style="color:${tc};border-color:${tc}44">${tl}</span>
-        <span class="score">${(a.score||0).toFixed(1)}</span></span></div>
-      <div class="did">${a.id}</div>
-      <div class="caps">${caps}</div>
-    </div>`;
-  }).join('');
-  document.querySelectorAll('.row').forEach(r=>{
+  const total = data.total ?? rows.length;
+
+  if(reset){
+    loaded = 0;
+    $('#results').innerHTML = rows.length ? '' : '<div class="empty">no agents match</div>';
+  }
+  const html = rows.map(rowHtml).join('');
+  $('#results').insertAdjacentHTML('beforeend', html);
+  loaded += rows.length;
+  $('#resCount').textContent = `${loaded} of ${total}`;
+
+  // Wire click handlers for newly added rows.
+  document.querySelectorAll('.row:not([data-wired])').forEach(r=>{
+    r.setAttribute('data-wired','1');
     r.onclick=()=>selectAgent(r.dataset.did, r);
   });
+
+  // Load-more control when more results remain.
+  const lm = $('#loadmore');
+  if(data.next_offset != null){
+    lm.innerHTML = `<button class="btn" id="lmBtn" style="width:100%;margin-top:6px">Load more (${loaded} of ${total})</button>`;
+    $('#lmBtn').onclick = ()=>search(false);
+  } else {
+    lm.innerHTML = '';
+  }
 }
 
 async function selectAgent(did, el){

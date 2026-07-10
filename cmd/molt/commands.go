@@ -48,8 +48,11 @@ func (s *stringSlice) Set(v string) error {
 }
 
 func cmdCard(args []string) error {
+	if len(args) > 0 && args[0] == "update" {
+		return cmdCardUpdate(args[1:])
+	}
 	if len(args) == 0 || args[0] != "new" {
-		return fmt.Errorf("usage: molt card new [flags]")
+		return fmt.Errorf("usage: molt card <new|update> [flags]")
 	}
 	fs := flag.NewFlagSet("card new", flag.ExitOnError)
 	agentFile := fs.String("agent", "agent.key", "agent keyfile")
@@ -114,6 +117,86 @@ func cmdCard(args []string) error {
 	}
 	hash, _ := c.Hash()
 	fmt.Printf("signed card written to %s\n  agent: %s\n  hash:  %s\n", *out, c.ID, hash)
+	return nil
+}
+
+// cmdCardUpdate fetches an agent's current card, applies field overrides, links
+// the new version to the current head via `prev`, re-signs, and submits it as a
+// linear update (which advances the head rather than forking).
+func cmdCardUpdate(args []string) error {
+	fs := flag.NewFlagSet("card update", flag.ExitOnError)
+	agentFile := fs.String("agent", "agent.key", "agent keyfile")
+	ownerFile := fs.String("owner", "owner.key", "owner keyfile")
+	name := fs.String("name", "", "new name (unchanged if empty)")
+	desc := fs.String("desc", "", "new description (unchanged if empty)")
+	version := fs.String("agent-version", "", "new version (unchanged if empty)")
+	out := fs.String("out", "card.json", "output card path")
+	registry := fs.String("registry", "", "registry base URL")
+	noSubmit := fs.Bool("no-submit", false, "write the card but do not submit")
+	var caps stringSlice
+	fs.Var(&caps, "cap", "replace capabilities with these tags (repeatable)")
+	fs.Parse(args)
+
+	agentKP, err := loadKeyfile(*agentFile)
+	if err != nil {
+		return err
+	}
+	ownerKP, err := loadKeyfile(*ownerFile)
+	if err != nil {
+		return err
+	}
+	reg := registryURL(*registry)
+
+	current, _, err := fetchAgent(reg, agentKP.DID)
+	if err != nil {
+		return fmt.Errorf("fetch current card: %w", err)
+	}
+	if current == nil {
+		return fmt.Errorf("agent %s is not registered; use `molt card new` first", agentKP.DID)
+	}
+	headHash, err := current.Hash()
+	if err != nil {
+		return err
+	}
+
+	// Start from the current card, apply overrides, link to the head.
+	next := *current
+	next.Sig, next.OwnerSig = "", ""
+	next.Prev = headHash
+	next.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	if *name != "" {
+		next.Name = *name
+	}
+	if *desc != "" {
+		next.Description = *desc
+	}
+	if *version != "" {
+		next.Version = *version
+	}
+	if len(caps) > 0 {
+		next.Capabilities = nil
+		for _, tag := range caps {
+			next.Capabilities = append(next.Capabilities, core.Capability{Tag: tag})
+		}
+	}
+	if err := next.Sign(agentKP.Private, ownerKP.Private); err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(&next, "", "  ")
+	if err := os.WriteFile(*out, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	newHash, _ := next.Hash()
+	fmt.Printf("updated card written to %s\n  prev: %s\n  new:  %s\n", *out, headHash, newHash)
+
+	if *noSubmit {
+		return nil
+	}
+	var resp map[string]any
+	if err := httpPostJSON(reg+"/v1/agents", &next, &resp); err != nil {
+		return err
+	}
+	fmt.Printf("submitted update for %s\n", agentKP.DID)
 	return nil
 }
 

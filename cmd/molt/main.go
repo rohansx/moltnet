@@ -16,7 +16,7 @@ USAGE:
 
 COMMANDS:
   keygen     Create an owner or agent keypair
-  card       Build and sign an agent card (subcommand: new)
+  card       Build/sign an agent card (subcommands: new, update)
   register   Sign-check and submit a card to a registry
   attest     Issue a signed attestation about an agent
   rotate     Owner-signed key rotation (retire an agent key for a new one)

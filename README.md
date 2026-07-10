@@ -25,7 +25,7 @@ marketplace, no feed. Those are someone else's product or a later conversation.
 | `internal/store/` | append-only SQLite storage (pure-Go, no cgo) |
 | `internal/server/` | `moltnetd` HTTP surface: REST API, badge SVGs, web UI |
 | `cmd/moltnetd/` | the registry server binary |
-| `cmd/molt/` | the CLI (keygen, card, register, attest, rotate, **verify**, search, badge, serve, mcp) |
+| `cmd/molt/` | the CLI (keygen, card new/update, register, attest, rotate, **verify**, search, badge, serve, mcp) |
 | `spec/` | the format specs — a first-class deliverable |
 | `clients/ts/` | `@moltnet/client` TypeScript verify/score library (Node + browser) |
 | `web/` | landing page, live registry explorer, shareable profiles, and in-browser registration (WebCrypto Ed25519) |

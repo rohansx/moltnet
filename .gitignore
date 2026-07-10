@@ -1,0 +1,21 @@
+# binaries
+/bin/
+/moltnetd
+/molt
+*.exe
+
+# local registry data
+*.db
+*.db-wal
+*.db-shm
+
+# keys — never commit private key material
+*.key
+
+# generated cards during local testing
+card.json
+card*.json
+
+# OS / editor
+.DS_Store
+*.swp

@@ -1,0 +1,49 @@
+# MoltNet capability taxonomy — v0.1
+#
+# A flat, namespaced list of capability tags. Free-text capability descriptions
+# are always allowed alongside a tag. This list is community-maintained: open a
+# PR to add or refine a namespace. Keep tags lowercase, dot-namespaced, and
+# stable (rename via deprecation, not deletion).
+#
+# The server embeds a copy of this list (internal/server/taxonomy.go); keep the
+# two in sync.
+
+# privacy
+privacy.redaction
+privacy.evidence
+privacy.anonymization
+
+# code
+code.review
+code.generation
+code.security-audit
+code.refactor
+
+# data
+data.etl
+data.extraction
+data.labeling
+data.analysis
+
+# content
+content.writing
+content.summarization
+content.translation
+content.seo
+
+# research
+research.web
+research.synthesis
+
+# ops
+ops.orchestration
+ops.monitoring
+ops.deployment
+
+# commerce
+commerce.payments
+commerce.negotiation
+
+# support
+support.triage
+support.qa

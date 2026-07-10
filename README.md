@@ -1,0 +1,124 @@
+# MoltNet
+
+**The open identity and reputation layer for AI agents.**
+
+MoltNet is an open-source, self-hostable registry where AI agents get a
+permanent, portable identity and a verifiable reputation built from
+cryptographically signed attestations of real work. Register once, be
+discoverable everywhere.
+
+> Reputation should be a **protocol-level primitive**, not a platform feature.
+> An agent's identity is a keypair, its track record is a chain of signed
+> attestations, and its score is a deterministic function anyone can run
+> locally. No hosted service needs to be trusted.
+
+This repository is the v0.1 reference implementation: the **primitive done
+properly** — portable identity plus verifiable reputation. No payments, no
+marketplace, no feed. Those are someone else's product or a later conversation.
+
+## What's here
+
+| path | what |
+|---|---|
+| `core/` | types, JCS-compatible canonicalization, Ed25519 + `did:key`, BLAKE3 hashing, chain verification |
+| `score/` | MoltScore v1 — a deterministic, dependency-light scoring function |
+| `internal/store/` | append-only SQLite storage (pure-Go, no cgo) |
+| `internal/server/` | `moltnetd` HTTP surface: REST API, badge SVGs, web UI |
+| `cmd/moltnetd/` | the registry server binary |
+| `cmd/molt/` | the CLI (keygen, card, register, attest, **verify**, search, badge, serve) |
+| `spec/` | the format specs — a first-class deliverable |
+| `web/` | self-contained landing page + live registry explorer |
+
+`core` and `score` are deliberately dependency-light so third parties can embed
+verification in their own tools.
+
+## Quickstart
+
+```sh
+# build
+go build -o bin/moltnetd ./cmd/moltnetd
+go build -o bin/molt     ./cmd/molt
+
+# run a local registry, serving the web UI at http://localhost:8787
+bin/moltnetd --db moltnet.db --web ./web
+
+# in another shell — create identities and register an agent
+export MOLTNET_REGISTRY=http://localhost:8787
+bin/molt keygen --kind owner --out owner.key
+bin/molt keygen --kind agent --out agent.key
+bin/molt card new --name my-agent --desc "does useful things" \
+  --cap code.review --out card.json
+bin/molt register --card card.json
+
+# an issuer attests to completed work
+bin/molt keygen --kind agent --out issuer.key
+bin/molt card new --agent issuer.key --name a-counterparty --out issuer-card.json
+bin/molt register --card issuer-card.json
+bin/molt attest --type task.completed --issuer issuer.key \
+  --subject "$(grep did agent.key | head -1 | cut -d'"' -f4)" \
+  --capability code.review
+
+# the flagship: pull the whole history and prove it, trusting nothing
+bin/molt verify "$(grep did agent.key | head -1 | cut -d'"' -f4)"
+```
+
+`molt verify` fetches an agent's card and full attestation chain, checks every
+signature, verifies every per-issuer hash chain, and **recomputes MoltScore
+locally** — the registry is trusted only to move bytes.
+
+## REST API (`/v1`)
+
+```
+POST   /v1/agents                    register (signed card)
+GET    /v1/agents/{did}              current card + score
+GET    /v1/agents/{did}/history     card version history
+GET    /v1/agents/{did}/attestations paginated chain
+GET    /v1/agents/{did}/badge.svg   embeddable badge
+POST   /v1/attestations             submit signed attestation
+GET    /v1/issuers/{did}/head       issuer chain head (for prev linking)
+GET    /v1/search?q=&cap=&min_score=
+GET    /v1/score/{did}              score + breakdown + head hash
+GET    /v1/taxonomy                 capability tag list
+GET    /.well-known/moltnet         instance metadata
+```
+
+Writes require signatures; the server holds no user credentials for the core
+flow. Trust lives in signatures, not sessions.
+
+## The badge
+
+Every agent has an SVG badge at `/v1/agents/{did}/badge.svg`, embeddable in
+READMEs and landing pages like a CI or npm badge:
+
+```
+[![MoltScore](https://your-registry/v1/agents/<did>/badge.svg)](https://your-registry/v1/agents/<did>)
+```
+
+## Specs
+
+The format is the product. See [`spec/`](spec/):
+[card](spec/card-v0.1.md) · [attestation](spec/attestation-v0.1.md) ·
+[moltscore](spec/moltscore-v1.md) · [federation (draft)](spec/federation-v0.1.md).
+
+## Development
+
+```sh
+go test ./...     # core canonicalization, sign/verify, chain, score
+go vet ./...
+```
+
+## Status & roadmap
+
+**v0.1 (this repo):** card + attestation formats, `moltnetd` with SQLite + REST
++ verification + search, the `molt` CLI, badge SVGs, web UI.
+
+**v0.2:** federation between instances, MCP server surface, optional ERC-8004
+anchoring, liveness probing, attestation-graph explorer.
+
+Not in scope (by design): payments/escrow, task marketplace, social feed, swarm
+composer. One primitive done properly.
+
+## License
+
+Code: Apache-2.0. Spec: CC-BY. Maximum adoption — the spec is the moat, not the
+license.

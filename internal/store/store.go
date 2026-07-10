@@ -1,0 +1,334 @@
+// Package store is the append-only persistence layer for moltnetd: agent cards,
+// their version history, attestations, and cached MoltScores. The raw canonical
+// JSON blob is the source of truth; indexed columns are rebuildable.
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+
+	"github.com/moltnet/moltnet/core"
+	"github.com/moltnet/moltnet/score"
+
+	_ "modernc.org/sqlite"
+)
+
+type Store struct {
+	db *sql.DB
+}
+
+const schema = `
+CREATE TABLE IF NOT EXISTS agents (
+    did         TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    capabilities TEXT,     -- space-joined tags for LIKE search
+    card_hash   TEXT NOT NULL,
+    card_json   TEXT NOT NULL,
+    version     TEXT,
+    created_at  TEXT,
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS card_history (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    did       TEXT NOT NULL,
+    card_hash TEXT NOT NULL,
+    card_json TEXT NOT NULL,
+    ts        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_history_did ON card_history(did);
+CREATE TABLE IF NOT EXISTS attestations (
+    hash      TEXT PRIMARY KEY,
+    issuer    TEXT NOT NULL,
+    subject   TEXT NOT NULL,
+    type      TEXT NOT NULL,
+    prev      TEXT,
+    issued_at TEXT,
+    raw_json  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_att_subject ON attestations(subject);
+CREATE INDEX IF NOT EXISTS idx_att_issuer  ON attestations(issuer);
+CREATE TABLE IF NOT EXISTS scores (
+    did        TEXT PRIMARY KEY,
+    score      REAL NOT NULL,
+    output_json TEXT NOT NULL,
+    updated_at TEXT
+);
+`
+
+// Open opens (creating if needed) a SQLite-backed store at path. Use ":memory:"
+// for an ephemeral store.
+func Open(path string) (*Store, error) {
+	dsn := path
+	if path != ":memory:" {
+		dsn = "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	}
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1) // serialize writes; simplest correct model for v0.1
+	if _, err := db.Exec(schema); err != nil {
+		return nil, fmt.Errorf("init schema: %w", err)
+	}
+	return &Store{db: db}, nil
+}
+
+func (s *Store) Close() error { return s.db.Close() }
+
+func capabilityBlob(c *core.Card) string {
+	out := ""
+	for i, cap := range c.Capabilities {
+		if i > 0 {
+			out += " "
+		}
+		out += cap.Tag
+	}
+	return out
+}
+
+// PutCard inserts or updates an agent's current card and appends to history.
+func (s *Store) PutCard(c *core.Card) error {
+	hash, err := c.Hash()
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
+        INSERT INTO agents (did, name, description, capabilities, card_hash, card_json, version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(did) DO UPDATE SET
+            name=excluded.name, description=excluded.description,
+            capabilities=excluded.capabilities, card_hash=excluded.card_hash,
+            card_json=excluded.card_json, version=excluded.version,
+            updated_at=excluded.updated_at`,
+		c.ID, c.Name, c.Description, capabilityBlob(c), hash, string(raw), c.Version,
+		c.CreatedAt, c.CreatedAt)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(
+		`INSERT INTO card_history (did, card_hash, card_json, ts) VALUES (?, ?, ?, ?)`,
+		c.ID, hash, string(raw), c.CreatedAt); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// GetCard returns the current card for a DID, or (nil, nil) if not found.
+func (s *Store) GetCard(did string) (*core.Card, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT card_json FROM agents WHERE did = ?`, did).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var c core.Card
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// CardHistory returns every version of a card, oldest first.
+func (s *Store) CardHistory(did string) ([]*core.Card, error) {
+	rows, err := s.db.Query(
+		`SELECT card_json FROM card_history WHERE did = ? ORDER BY id ASC`, did)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*core.Card
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var c core.Card
+		if err := json.Unmarshal([]byte(raw), &c); err != nil {
+			return nil, err
+		}
+		out = append(out, &c)
+	}
+	return out, rows.Err()
+}
+
+// IssuerHead returns the hash of an issuer's most recent attestation (its chain
+// head), or "" if the issuer has none.
+func (s *Store) IssuerHead(issuer string) (string, error) {
+	rows, err := s.db.Query(
+		`SELECT raw_json FROM attestations WHERE issuer = ? ORDER BY issued_at ASC`, issuer)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var lastHash string
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return "", err
+		}
+		var a core.Attestation
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			return "", err
+		}
+		h, err := a.Hash()
+		if err != nil {
+			return "", err
+		}
+		lastHash = h
+	}
+	return lastHash, rows.Err()
+}
+
+// PutAttestation stores a verified attestation.
+func (s *Store) PutAttestation(a *core.Attestation) error {
+	hash, err := a.Hash()
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO attestations (hash, issuer, subject, type, prev, issued_at, raw_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		hash, a.Issuer, a.Subject, a.Type, a.Prev, a.IssuedAt, string(raw))
+	return err
+}
+
+// AttestationsForSubject returns every attestation about a subject, oldest first.
+func (s *Store) AttestationsForSubject(did string) ([]*core.Attestation, error) {
+	return s.queryAttestations(`SELECT raw_json FROM attestations WHERE subject = ? ORDER BY issued_at ASC`, did)
+}
+
+func (s *Store) queryAttestations(q string, args ...any) ([]*core.Attestation, error) {
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*core.Attestation
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var a core.Attestation
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			return nil, err
+		}
+		out = append(out, &a)
+	}
+	return out, rows.Err()
+}
+
+// SetScore caches a computed score for a DID.
+func (s *Store) SetScore(did string, out score.Output) error {
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO scores (did, score, output_json, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(did) DO UPDATE SET score=excluded.score, output_json=excluded.output_json, updated_at=excluded.updated_at`,
+		did, out.Score, string(raw), out.ComputedAt)
+	return err
+}
+
+// CachedScore returns the cached score value for a DID (0 if none), used as an
+// issuer weight input.
+func (s *Store) CachedScore(did string) (float64, bool, error) {
+	var v float64
+	err := s.db.QueryRow(`SELECT score FROM scores WHERE did = ?`, did).Scan(&v)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return v, true, nil
+}
+
+// Agent is a lightweight row for search/listing.
+type Agent struct {
+	DID          string   `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Capabilities []string `json:"capabilities"`
+	Score        float64  `json:"score"`
+}
+
+// Search returns agents matching a free-text query, an optional capability tag,
+// and a minimum score, ordered by score descending.
+func (s *Store) Search(q, capTag string, minScore float64, limit int) ([]Agent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	sqlText := `
+        SELECT a.did, a.name, COALESCE(a.description,''), COALESCE(a.capabilities,''),
+               COALESCE(s.score, 0)
+        FROM agents a LEFT JOIN scores s ON s.did = a.did
+        WHERE (? = '' OR a.name LIKE '%'||?||'%' OR a.description LIKE '%'||?||'%' OR a.capabilities LIKE '%'||?||'%')
+          AND (? = '' OR a.capabilities LIKE '%'||?||'%')
+          AND COALESCE(s.score,0) >= ?
+        ORDER BY COALESCE(s.score,0) DESC
+        LIMIT ?`
+	rows, err := s.db.Query(sqlText, q, q, q, q, capTag, capTag, minScore, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Agent
+	for rows.Next() {
+		var a Agent
+		var caps string
+		if err := rows.Scan(&a.DID, &a.Name, &a.Description, &caps, &a.Score); err != nil {
+			return nil, err
+		}
+		if caps != "" {
+			a.Capabilities = splitFields(caps)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// AgentCount returns the number of registered agents.
+func (s *Store) AgentCount() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM agents`).Scan(&n)
+	return n, err
+}
+
+func splitFields(s string) []string {
+	var out []string
+	cur := ""
+	for _, r := range s {
+		if r == ' ' {
+			if cur != "" {
+				out = append(out, cur)
+				cur = ""
+			}
+			continue
+		}
+		cur += string(r)
+	}
+	if cur != "" {
+		out = append(out, cur)
+	}
+	return out
+}

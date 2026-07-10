@@ -123,5 +123,14 @@ func (s *Server) ingestFederated(kind string, record json.RawMessage) {
 		if inserted, _ := s.Store.PutAttestation(&a); inserted {
 			_, _ = s.recomputeScore(a.Subject)
 		}
+	case "rotation":
+		var rot core.Rotation
+		if json.Unmarshal(record, &rot) != nil || rot.Verify() != nil {
+			return
+		}
+		// Only accept the rotation if the local old-agent card owner matches.
+		if oldCard, _ := s.Store.GetCard(rot.OldAgent); oldCard != nil && oldCard.Owner == rot.Owner {
+			_, _ = s.Store.PutRotation(&rot)
+		}
 	}
 }

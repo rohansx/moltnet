@@ -19,6 +19,7 @@ COMMANDS:
   card       Build and sign an agent card (subcommand: new)
   register   Sign-check and submit a card to a registry
   attest     Issue a signed attestation about an agent
+  rotate     Owner-signed key rotation (retire an agent key for a new one)
   verify     Fetch an agent's chain, verify signatures, recompute score locally
   search     Search the registry by text, capability and min score
   badge      Print a Markdown badge snippet for an agent
@@ -45,6 +46,8 @@ func main() {
 		err = cmdRegister(os.Args[2:])
 	case "attest":
 		err = cmdAttest(os.Args[2:])
+	case "rotate":
+		err = cmdRotate(os.Args[2:])
 	case "verify":
 		err = cmdVerify(os.Args[2:])
 	case "search":

@@ -206,6 +206,34 @@ func cmdAttest(args []string) error {
 	return nil
 }
 
+func cmdRotate(args []string) error {
+	fs := flag.NewFlagSet("rotate", flag.ExitOnError)
+	ownerFile := fs.String("owner", "owner.key", "owner keyfile (authorizes the rotation)")
+	oldDID := fs.String("old", "", "current agent DID being retired (required)")
+	newDID := fs.String("new", "", "replacement agent DID (required)")
+	registry := fs.String("registry", "", "registry base URL")
+	fs.Parse(args)
+
+	if *oldDID == "" || *newDID == "" {
+		return fmt.Errorf("--old and --new agent DIDs are required")
+	}
+	ownerKP, err := loadKeyfile(*ownerFile)
+	if err != nil {
+		return err
+	}
+	rot := core.NewRotation(ownerKP.DID, *oldDID, *newDID)
+	if err := rot.Sign(ownerKP.Private); err != nil {
+		return err
+	}
+	reg := registryURL(*registry)
+	var resp map[string]any
+	if err := httpPostJSON(reg+"/v1/rotations", rot, &resp); err != nil {
+		return err
+	}
+	fmt.Printf("rotated agent key\n  old: %s\n  new: %s\n  owner: %s\n", *oldDID, *newDID, ownerKP.DID)
+	return nil
+}
+
 func cmdSearch(args []string) error {
 	fs := flag.NewFlagSet("search", flag.ExitOnError)
 	capTag := fs.String("cap", "", "capability tag filter")

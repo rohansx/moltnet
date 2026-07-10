@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS peer_cursors (
     peer   TEXT PRIMARY KEY,
     cursor INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS rotations (
+    hash      TEXT PRIMARY KEY,
+    owner     TEXT NOT NULL,
+    old_agent TEXT NOT NULL,
+    new_agent TEXT NOT NULL,
+    issued_at TEXT,
+    raw_json  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rot_old ON rotations(old_agent);
 `
 
 // Open opens (creating if needed) a SQLite-backed store at path. Use ":memory:"
@@ -264,6 +273,61 @@ func (s *Store) PutAttestation(a *core.Attestation) (bool, error) {
 		return false, err
 	}
 	return true, tx.Commit()
+}
+
+// PutRotation stores a verified key-rotation record. Idempotent on content
+// hash; emits a federation event when newly stored.
+func (s *Store) PutRotation(r *core.Rotation) (bool, error) {
+	hash, err := r.Hash()
+	if err != nil {
+		return false, err
+	}
+	raw, err := json.Marshal(r)
+	if err != nil {
+		return false, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
+		`INSERT INTO rotations (hash, owner, old_agent, new_agent, issued_at, raw_json)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(hash) DO NOTHING`,
+		hash, r.Owner, r.OldAgent, r.NewAgent, r.IssuedAt, string(raw))
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, tx.Commit()
+	}
+	if err = appendEvent(tx, "rotation", hash, string(raw), r.IssuedAt); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+// AllRotations returns every rotation record (used to resolve current DIDs).
+func (s *Store) AllRotations() ([]*core.Rotation, error) {
+	rows, err := s.db.Query(`SELECT raw_json FROM rotations ORDER BY issued_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*core.Rotation
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var r core.Rotation
+		if err := json.Unmarshal([]byte(raw), &r); err != nil {
+			return nil, err
+		}
+		out = append(out, &r)
+	}
+	return out, rows.Err()
 }
 
 // Event is a single entry in the federation change feed.

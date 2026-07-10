@@ -35,6 +35,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agents/{did}/badge.svg", s.handleBadge)
 	mux.HandleFunc("GET /v1/agents/{did}/liveness", s.handleLiveness)
 	mux.HandleFunc("POST /v1/attestations", s.handleAttest)
+	mux.HandleFunc("POST /v1/rotations", s.handleRotation)
 	mux.HandleFunc("GET /v1/issuers/{did}/head", s.handleIssuerHead)
 	mux.HandleFunc("GET /v1/search", s.handleSearch)
 	mux.HandleFunc("GET /v1/score/{did}", s.handleScore)
@@ -117,7 +118,48 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	out, _ := s.recomputeScore(did)
 	live, _ := s.Store.GetLiveness(did)
-	writeJSON(w, http.StatusOK, map[string]any{"card": c, "score": out, "liveness": live})
+	resp := map[string]any{"card": c, "score": out, "liveness": live}
+	// Surface whether this identity has been rotated to a newer agent key.
+	if rots, err := s.Store.AllRotations(); err == nil {
+		if current, rerr := core.ResolveCurrentAgent(rots, did); rerr == nil && current != did {
+			resp["rotated_to"] = current
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleRotation(w http.ResponseWriter, r *http.Request) {
+	var rot core.Rotation
+	if err := json.NewDecoder(r.Body).Decode(&rot); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid rotation json: "+err.Error())
+		return
+	}
+	if err := rot.Verify(); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// Only the owner recorded on the old agent's card may rotate its key.
+	oldCard, err := s.Store.GetCard(rot.OldAgent)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if oldCard == nil {
+		writeErr(w, http.StatusNotFound, "old_agent not found")
+		return
+	}
+	if oldCard.Owner != rot.Owner {
+		writeErr(w, http.StatusForbidden, "rotation owner does not match the agent card owner")
+		return
+	}
+	if _, err := s.Store.PutRotation(&rot); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	hash, _ := rot.Hash()
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"hash": hash, "old_agent": rot.OldAgent, "new_agent": rot.NewAgent,
+	})
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {

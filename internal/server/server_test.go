@@ -165,6 +165,50 @@ func TestRegisterAttestScoreFlow(t *testing.T) {
 	}
 }
 
+func TestKeyRotation(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	oldAgent, _ := core.GenerateKeyPair()
+	newAgent, _ := core.GenerateKeyPair()
+	attacker, _ := core.GenerateKeyPair()
+
+	// Register the original agent, owned by `owner`.
+	if code, body := postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, oldAgent, "rotating-agent")); code != 201 {
+		t.Fatalf("register: %d %s", code, body)
+	}
+
+	// A rotation signed by someone who is NOT the card's owner must be rejected.
+	evil := core.NewRotation(attacker.DID, oldAgent.DID, newAgent.DID)
+	if err := evil.Sign(attacker.Private); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := postJSON(t, ts.URL+"/v1/rotations", evil); code == 201 {
+		t.Fatal("rotation by non-owner must not be accepted")
+	}
+
+	// The real owner rotates old -> new.
+	rot := core.NewRotation(owner.DID, oldAgent.DID, newAgent.DID)
+	if err := rot.Sign(owner.Private); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := postJSON(t, ts.URL+"/v1/rotations", rot); code != 201 {
+		t.Fatalf("rotation by owner: %d %s", code, body)
+	}
+
+	// GET on the old DID should surface that it rotated to the new DID.
+	var resp struct {
+		RotatedTo string `json:"rotated_to"`
+	}
+	if code := getJSON(t, ts.URL+"/v1/agents/"+oldAgent.DID, &resp); code != 200 {
+		t.Fatalf("get old agent: %d", code)
+	}
+	if resp.RotatedTo != newAgent.DID {
+		t.Fatalf("expected rotated_to=%s, got %q", newAgent.DID, resp.RotatedTo)
+	}
+}
+
 func TestUnknownAgentIs404(t *testing.T) {
 	ts, cleanup := testEnv(t)
 	defer cleanup()

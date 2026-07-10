@@ -110,6 +110,16 @@ GET    /openapi.json                OpenAPI 3.1 description of this API
 GET    /healthz                     liveness + store round-trip check
 ```
 
+## Docker
+
+```sh
+docker build -t moltnet .
+docker run -p 8787:8787 -v moltnet-data:/data moltnet
+```
+
+A static, non-root distroless image (~15 MB): pure-Go binary, no cgo. Data
+persists in the `/data` volume; probe `GET /healthz`.
+
 ## Federation
 
 Instances federate pull-based: run a follower with `--peer`, and it pulls each

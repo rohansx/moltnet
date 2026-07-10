@@ -1,0 +1,11 @@
+.git
+/bin
+*.db
+*.db-wal
+*.db-shm
+*.key
+card*.json
+clients/*/node_modules
+clients/*/dist
+**/__pycache__
+.github

@@ -93,6 +93,7 @@ GET    /v1/agents/{did}/history     card version history
 GET    /v1/agents/{did}/attestations paginated chain (?limit=&offset=)
 GET    /v1/agents/{did}/badge.svg   embeddable badge
 GET    /v1/agents/{did}/liveness    opt-in endpoint reachability + latency
+GET    /v1/agents/{did}/a2a         A2A-compatible Agent Card (write once, resolve everywhere)
 POST   /v1/attestations             submit signed attestation
 POST   /v1/rotations                submit owner-signed key rotation
 GET    /v1/issuers/{did}/head       issuer chain head (for prev linking)

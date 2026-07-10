@@ -399,6 +399,62 @@ func TestSearchPagination(t *testing.T) {
 	}
 }
 
+func TestA2AResolution(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	agent, _ := core.GenerateKeyPair()
+
+	c := core.NewCard(agent.DID, owner.DID, "resolver-agent")
+	c.Description = "does resolvable things"
+	c.Version = "1.2.3"
+	c.Capabilities = []core.Capability{{Tag: "code.review", Desc: "reviews PRs"}}
+	c.Protocols = map[string]any{
+		"a2a":  map[string]any{"agent_card": "https://agent.example/.well-known/agent.json"},
+		"http": map[string]any{"endpoint": "https://agent.example/v1"},
+	}
+	if err := c.Sign(agent.Private, owner.Private); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := postJSON(t, ts.URL+"/v1/agents", c); code != 201 {
+		t.Fatalf("register: %d %s", code, body)
+	}
+
+	var a2a struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+		URL     string `json:"url"`
+		Skills  []struct {
+			ID   string   `json:"id"`
+			Tags []string `json:"tags"`
+		} `json:"skills"`
+		Moltnet struct {
+			DID       string  `json:"did"`
+			MoltScore float64 `json:"moltscore"`
+			Verify    string  `json:"verify"`
+		} `json:"x-moltnet"`
+	}
+	if code := getJSON(t, ts.URL+"/v1/agents/"+agent.DID+"/a2a", &a2a); code != 200 {
+		t.Fatalf("a2a: %d", code)
+	}
+	if a2a.Name != "resolver-agent" || a2a.Version != "1.2.3" {
+		t.Fatalf("name/version mismatch: %+v", a2a)
+	}
+	if a2a.URL != "https://agent.example/.well-known/agent.json" {
+		t.Fatalf("url = %q", a2a.URL)
+	}
+	if len(a2a.Skills) != 1 || a2a.Skills[0].ID != "code.review" {
+		t.Fatalf("skills = %+v", a2a.Skills)
+	}
+	if a2a.Moltnet.DID != agent.DID {
+		t.Fatalf("x-moltnet.did = %q, want %q", a2a.Moltnet.DID, agent.DID)
+	}
+	if a2a.Moltnet.Verify == "" {
+		t.Fatal("expected x-moltnet.verify link")
+	}
+}
+
 func TestUnknownAgentIs404(t *testing.T) {
 	ts, cleanup := testEnv(t)
 	defer cleanup()

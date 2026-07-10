@@ -34,6 +34,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agents/{did}/attestations", s.handleAttestations)
 	mux.HandleFunc("GET /v1/agents/{did}/badge.svg", s.handleBadge)
 	mux.HandleFunc("GET /v1/agents/{did}/liveness", s.handleLiveness)
+	mux.HandleFunc("GET /v1/agents/{did}/a2a", s.handleA2A)
 	mux.HandleFunc("POST /v1/attestations", s.handleAttest)
 	mux.HandleFunc("POST /v1/rotations", s.handleRotation)
 	mux.HandleFunc("GET /v1/issuers/{did}/head", s.handleIssuerHead)

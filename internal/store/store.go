@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS scores (
     output_json TEXT NOT NULL,
     updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS liveness (
+    did         TEXT PRIMARY KEY,
+    url         TEXT NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 0,
+    reachable   INTEGER,
+    status_code INTEGER,
+    latency_ms  INTEGER,
+    checked_at  TEXT
+);
 `
 
 // Open opens (creating if needed) a SQLite-backed store at path. Use ":memory:"
@@ -261,6 +270,96 @@ func (s *Store) CachedScore(did string) (float64, bool, error) {
 		return 0, false, err
 	}
 	return v, true, nil
+}
+
+// Liveness is the stored health-probe config and last observation for an agent.
+type Liveness struct {
+	DID        string `json:"did"`
+	URL        string `json:"url"`
+	Enabled    bool   `json:"enabled"`
+	Reachable  *bool  `json:"reachable"`
+	StatusCode *int   `json:"status_code,omitempty"`
+	LatencyMs  *int   `json:"latency_ms,omitempty"`
+	CheckedAt  string `json:"checked_at,omitempty"`
+}
+
+// SetLivenessConfig upserts an agent's probe URL and enabled flag, preserving
+// any prior observation.
+func (s *Store) SetLivenessConfig(did, url string, enabled bool) error {
+	e := 0
+	if enabled {
+		e = 1
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO liveness (did, url, enabled) VALUES (?, ?, ?)
+         ON CONFLICT(did) DO UPDATE SET url=excluded.url, enabled=excluded.enabled`,
+		did, url, e)
+	return err
+}
+
+// RecordLiveness stores the result of a probe.
+func (s *Store) RecordLiveness(did string, reachable bool, status, latencyMs int, checkedAt string) error {
+	r := 0
+	if reachable {
+		r = 1
+	}
+	_, err := s.db.Exec(
+		`UPDATE liveness SET reachable=?, status_code=?, latency_ms=?, checked_at=? WHERE did=?`,
+		r, status, latencyMs, checkedAt, did)
+	return err
+}
+
+// GetLiveness returns an agent's liveness row, or (nil, nil) if none.
+func (s *Store) GetLiveness(did string) (*Liveness, error) {
+	var l Liveness
+	var enabled int
+	var reachable, status, latency *int64
+	var checkedAt *string
+	err := s.db.QueryRow(
+		`SELECT did, url, enabled, reachable, status_code, latency_ms, checked_at FROM liveness WHERE did=?`, did).
+		Scan(&l.DID, &l.URL, &enabled, &reachable, &status, &latency, &checkedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	l.Enabled = enabled == 1
+	if reachable != nil {
+		b := *reachable == 1
+		l.Reachable = &b
+	}
+	if status != nil {
+		i := int(*status)
+		l.StatusCode = &i
+	}
+	if latency != nil {
+		i := int(*latency)
+		l.LatencyMs = &i
+	}
+	if checkedAt != nil {
+		l.CheckedAt = *checkedAt
+	}
+	return &l, nil
+}
+
+// EnabledLivenessTargets returns all agents with liveness probing enabled.
+func (s *Store) EnabledLivenessTargets() ([]Liveness, error) {
+	rows, err := s.db.Query(`SELECT did, url FROM liveness WHERE enabled=1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Liveness
+	for rows.Next() {
+		var l Liveness
+		if err := rows.Scan(&l.DID, &l.URL); err != nil {
+			return nil, err
+		}
+		l.Enabled = true
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }
 
 // Agent is a lightweight row for search/listing.

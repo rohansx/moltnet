@@ -92,6 +92,7 @@ GET    /v1/agents/{did}              current card + score
 GET    /v1/agents/{did}/history     card version history
 GET    /v1/agents/{did}/attestations paginated chain
 GET    /v1/agents/{did}/badge.svg   embeddable badge
+GET    /v1/agents/{did}/liveness    opt-in endpoint reachability + latency
 POST   /v1/attestations             submit signed attestation
 GET    /v1/issuers/{did}/head       issuer chain head (for prev linking)
 GET    /v1/search?q=&cap=&min_score=

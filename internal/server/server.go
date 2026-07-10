@@ -32,6 +32,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agents/{did}/history", s.handleHistory)
 	mux.HandleFunc("GET /v1/agents/{did}/attestations", s.handleAttestations)
 	mux.HandleFunc("GET /v1/agents/{did}/badge.svg", s.handleBadge)
+	mux.HandleFunc("GET /v1/agents/{did}/liveness", s.handleLiveness)
 	mux.HandleFunc("POST /v1/attestations", s.handleAttest)
 	mux.HandleFunc("GET /v1/issuers/{did}/head", s.handleIssuerHead)
 	mux.HandleFunc("GET /v1/search", s.handleSearch)
@@ -85,6 +86,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Opt-in liveness: record config and kick an immediate probe in the
+	// background so the profile shows a status without waiting for the sweep.
+	if c.Liveness != nil && c.Liveness.Enabled && c.Liveness.URL != "" {
+		_ = s.Store.SetLivenessConfig(c.ID, c.Liveness.URL, true)
+		go s.probeOne(c.ID, c.Liveness.URL)
+	} else if c.Liveness != nil {
+		_ = s.Store.SetLivenessConfig(c.ID, c.Liveness.URL, false)
+	}
 	out, _ := s.recomputeScore(c.ID)
 	hash, _ := c.Hash()
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -104,7 +113,8 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, _ := s.recomputeScore(did)
-	writeJSON(w, http.StatusOK, map[string]any{"card": c, "score": out})
+	live, _ := s.Store.GetLiveness(did)
+	writeJSON(w, http.StatusOK, map[string]any{"card": c, "score": out, "liveness": live})
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +177,19 @@ func (s *Server) handleAttest(w http.ResponseWriter, r *http.Request) {
 	out, _ := s.recomputeScore(a.Subject)
 	hash, _ := a.Hash()
 	writeJSON(w, http.StatusCreated, map[string]any{"hash": hash, "subject_score": out})
+}
+
+func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
+	live, err := s.Store.GetLiveness(r.PathValue("did"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if live == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, live)
 }
 
 func (s *Server) handleIssuerHead(w http.ResponseWriter, r *http.Request) {

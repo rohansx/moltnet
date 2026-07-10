@@ -166,10 +166,20 @@ async function main(){
     atts =await (await fetch('/v1/agents/'+encodeURIComponent(DID)+'/attestations')).json();
   }catch(e){ $('#root').innerHTML='<div class="empty" style="margin-top:40px">agent not found</div>'; return; }
   if(agent.error){ $('#root').innerHTML='<div class="empty" style="margin-top:40px">'+esc(agent.error)+'</div>'; return; }
-  render(agent.card||{}, agent.score||{}, (atts.attestations||[]));
+  render(agent.card||{}, agent.score||{}, (atts.attestations||[]), agent.liveness);
 }
 
-function render(c, s, atts){
+function livenessHTML(l){
+  if(!l || !l.enabled) return '<div class="kv"><span class="k">liveness</span><span class="v" style="color:var(--ink-4)">not enabled</span></div>';
+  if(l.reachable===null || l.reachable===undefined) return '<div class="kv"><span class="k">liveness</span><span class="v" style="color:var(--warn)">probe pending</span></div>';
+  const color = l.reachable ? 'var(--ac)' : 'var(--bad)';
+  const label = l.reachable ? 'reachable' : 'unreachable';
+  const lat = (l.latency_ms!=null) ? ` · ${l.latency_ms}ms` : '';
+  const code = (l.status_code) ? ` · HTTP ${l.status_code}` : '';
+  return `<div class="kv"><span class="k">liveness</span><span class="v" style="color:${color}">● ${label}${lat}${code}</span></div>`;
+}
+
+function render(c, s, atts, liveness){
   const [tl,tc]=tier(s.score||0);
   const inp=s.inputs||{};
   const caps=(c.capabilities||[]).map(x=>`<span class="tag" title="${esc(x.desc||'')}">${esc(x.tag)}</span>`).join('');
@@ -222,6 +232,7 @@ function render(c, s, atts){
       <div class="kv"><span class="k">owner</span><span class="v">${esc((c.owner||'').slice(0,30))}…</span></div>
       <div class="kv"><span class="k">version</span><span class="v">${esc(c.version||'—')}</span></div>
       <div class="kv"><span class="k">created</span><span class="v">${esc(c.created_at||'—')}</span></div>
+      ${livenessHTML(liveness)}
       <h3 style="margin-top:16px">Protocols</h3>${protos}
       <h3 style="margin-top:16px">Links</h3><div class="proto">${links}</div>
     </div>

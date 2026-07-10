@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/moltnet/moltnet/internal/server"
 	"github.com/moltnet/moltnet/internal/store"
@@ -23,6 +24,7 @@ func main() {
 		dbPath = flag.String("db", "moltnet.db", "SQLite database path (or :memory:)")
 		webDir = flag.String("web", "", "directory of static web assets to serve at / (optional)")
 		name   = flag.String("name", "moltnet local instance", "instance name in /.well-known/moltnet")
+		probe  = flag.Duration("probe-interval", 5*time.Minute, "liveness probe sweep interval (0 disables)")
 	)
 	flag.Parse()
 
@@ -33,6 +35,7 @@ func main() {
 	defer st.Close()
 
 	srv := &server.Server{Store: st, WebDir: *webDir, Name: *name, Version: version}
+	srv.StartLivenessProber(*probe)
 
 	fmt.Fprintf(os.Stderr, "moltnetd %s\n", version)
 	fmt.Fprintf(os.Stderr, "  db:   %s\n", *dbPath)

@@ -58,6 +58,11 @@ func cmdCard(args []string) error {
 	desc := fs.String("desc", "", "agent description")
 	version := fs.String("agent-version", "0.1.0", "agent version string")
 	out := fs.String("out", "card.json", "output card path")
+	livenessURL := fs.String("liveness-url", "", "opt-in health-probe URL (enables liveness)")
+	httpEndpoint := fs.String("http", "", "HTTP endpoint binding for the http protocol")
+	mcpEndpoint := fs.String("mcp", "", "MCP endpoint binding for the mcp protocol")
+	site := fs.String("site", "", "public site link")
+	source := fs.String("source", "", "source repository link")
 	var caps stringSlice
 	fs.Var(&caps, "cap", "capability tag (repeatable, e.g. code.review)")
 	fs.Parse(args[1:])
@@ -78,6 +83,27 @@ func cmdCard(args []string) error {
 	c.Version = *version
 	for _, tag := range caps {
 		c.Capabilities = append(c.Capabilities, core.Capability{Tag: tag})
+	}
+	if *httpEndpoint != "" || *mcpEndpoint != "" {
+		c.Protocols = map[string]any{}
+		if *httpEndpoint != "" {
+			c.Protocols["http"] = map[string]any{"endpoint": *httpEndpoint}
+		}
+		if *mcpEndpoint != "" {
+			c.Protocols["mcp"] = map[string]any{"endpoint": *mcpEndpoint}
+		}
+	}
+	if *site != "" || *source != "" {
+		c.Links = map[string]string{}
+		if *site != "" {
+			c.Links["site"] = *site
+		}
+		if *source != "" {
+			c.Links["source"] = *source
+		}
+	}
+	if *livenessURL != "" {
+		c.Liveness = &core.Liveness{Enabled: true, URL: *livenessURL}
 	}
 	if err := c.Sign(agentKP.Private, ownerKP.Private); err != nil {
 		return err
@@ -233,6 +259,7 @@ func cmdServe(args []string) error {
 	}
 	defer st.Close()
 	srv := &server.Server{Store: st, WebDir: *webDir, Name: "molt serve", Version: "0.1.0"}
+	srv.StartLivenessProber(5 * time.Minute)
 	fmt.Printf("moltnetd listening on http://localhost%s (db: %s)\n", *addr, *dbPath)
 	return httpListen(*addr, srv)
 }

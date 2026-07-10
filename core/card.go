@@ -15,6 +15,15 @@ type Capability struct {
 	Desc string `json:"desc,omitempty"`
 }
 
+// Liveness is an agent's opt-in health-probe configuration. When enabled, a
+// registry periodically probes URL and records reachability + latency. This is
+// an observable signal, displayed on profiles but deliberately kept OUT of
+// MoltScore so the score stays purely attestation-derived and recomputable.
+type Liveness struct {
+	Enabled bool   `json:"enabled"`
+	URL     string `json:"url"`
+}
+
 // Card is the canonical Agent Card: one JSON document describing an agent's
 // identity, capabilities, endpoints and protocol bindings. It is content
 // addressed (BLAKE3 of the canonical signing payload) and doubly signed by the
@@ -31,6 +40,7 @@ type Card struct {
 	Anchors      map[string]any         `json:"anchors,omitempty"`
 	Links        map[string]string      `json:"links,omitempty"`
 	PricingHint  map[string]any         `json:"pricing_hint,omitempty"`
+	Liveness     *Liveness              `json:"liveness,omitempty"`
 	CreatedAt    string                 `json:"created_at"`
 	Sig          string                 `json:"sig,omitempty"`       // agent key signature
 	OwnerSig     string                 `json:"owner_sig,omitempty"` // owner key signature

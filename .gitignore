@@ -15,6 +15,13 @@
 # generated cards during local testing
 card.json
 card*.json
+issuer-card.json
+issuer.key
+
+# frontend (Vite) build artifacts + deps
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
 
 # OS / editor
 .DS_Store

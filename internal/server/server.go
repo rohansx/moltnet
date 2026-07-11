@@ -19,6 +19,7 @@ import (
 type Server struct {
 	Store   *store.Store
 	WebDir  string   // optional path to static web assets ("" disables)
+	AppDir  string   // optional path to a built SPA (e.g. frontend/dist) served at /
 	Name    string
 	Version string
 	Peers   []string // federation peers this instance follows (allowlist)
@@ -55,7 +56,27 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /federation/changes", s.handleFederationChanges)
 	mux.HandleFunc("GET /federation/peers", s.handleFederationPeers)
 
-	if s.WebDir != "" {
+	// ---- auth (SIWK + sessions + agent API keys) ----
+	mux.HandleFunc("POST /v1/auth/challenge", s.handleAuthChallenge)
+	mux.HandleFunc("POST /v1/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("POST /v1/auth/logout", s.handleAuthLogout)
+	mux.HandleFunc("GET /v1/auth/me", s.requireOwner(s.handleAuthMe))
+	mux.HandleFunc("GET /v1/me/agents", s.requireOwner(s.handleMyAgents))
+	mux.HandleFunc("GET /v1/me/apikeys", s.requireOwner(s.handleListAPIKeys))
+	mux.HandleFunc("POST /v1/me/apikeys", s.requireOwner(s.handleCreateAPIKey))
+	mux.HandleFunc("DELETE /v1/me/apikeys/{prefix}", s.requireOwner(s.handleRevokeAPIKey))
+	mux.HandleFunc("GET /v1/agent/me", s.handleAgentMe)
+
+	// ---- web UI ----
+	// AppDir (a built SPA, e.g. Vite/React) is served at / with SPA fallback.
+	// WebDir (legacy static HTML) is served for any path the SPA doesn't own,
+	// so the existing explorer/profile/register/graph pages keep working while
+	// the interactive core (login + dashboard + landing) moves to the SPA.
+	if s.AppDir != "" {
+		mux.HandleFunc("GET /", s.handleSPA)
+	} else if s.WebDir != "" {
+		// Gate the legacy dashboard shell behind a session; everything else public.
+		mux.HandleFunc("GET /dashboard.html", s.handleDashboardGate)
 		mux.Handle("/", http.FileServer(http.Dir(s.WebDir)))
 	}
 
@@ -74,7 +95,7 @@ func withCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

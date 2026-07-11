@@ -91,6 +91,33 @@ CREATE TABLE IF NOT EXISTS forks (
     detected_at    TEXT,
     PRIMARY KEY (did, competing_hash)
 );
+CREATE TABLE IF NOT EXISTS challenges (
+    nonce      TEXT PRIMARY KEY,
+    issued_at  TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chall_exp ON challenges(expires_at);
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    owner_did  TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    last_seen  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sess_owner ON sessions(owner_did);
+CREATE TABLE IF NOT EXISTS api_keys (
+    key_hash   TEXT PRIMARY KEY,
+    agent_did  TEXT NOT NULL,
+    owner_did  TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    prefix     TEXT NOT NULL,
+    last4      TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_key_owner ON api_keys(owner_did);
+CREATE INDEX IF NOT EXISTS idx_key_agent ON api_keys(agent_did);
 `
 
 // Open opens (creating if needed) a SQLite-backed store at path. Use ":memory:"
@@ -112,6 +139,11 @@ func Open(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// DB exposes the underlying *sql.DB so server helpers can run one-off read
+// queries (e.g. rebinding a SIWK challenge's issued_at) without a full store
+// method. Read-only use only.
+func (s *Store) DB() *sql.DB { return s.db }
 
 func capabilityBlob(c *core.Card) string {
 	out := ""

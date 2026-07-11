@@ -35,6 +35,7 @@ func main() {
 		addr   = flag.String("addr", ":8787", "listen address")
 		dbPath = flag.String("db", "moltnet.db", "SQLite database path (or :memory:)")
 		webDir = flag.String("web", "", "directory of static web assets to serve at / (optional)")
+		appDir = flag.String("app", "", "built SPA directory to serve at / (e.g. frontend/dist, optional)")
 		name   = flag.String("name", "moltnet local instance", "instance name in /.well-known/moltnet")
 		probe  = flag.Duration("probe-interval", 5*time.Minute, "liveness probe sweep interval (0 disables)")
 		fedInt = flag.Duration("federation-interval", 30*time.Second, "federation pull interval (0 disables)")
@@ -51,7 +52,7 @@ func main() {
 	}
 	defer st.Close()
 
-	srv := &server.Server{Store: st, WebDir: *webDir, Name: *name, Version: version, Peers: peers, RateLimitPerMin: *rlimit}
+	srv := &server.Server{Store: st, WebDir: *webDir, AppDir: *appDir, Name: *name, Version: version, Peers: peers, RateLimitPerMin: *rlimit}
 	if *logReq {
 		srv.LogWriter = os.Stderr
 	}
@@ -62,6 +63,9 @@ func main() {
 	fmt.Fprintf(os.Stderr, "  db:   %s\n", *dbPath)
 	if *webDir != "" {
 		fmt.Fprintf(os.Stderr, "  web:  %s\n", *webDir)
+	}
+	if *appDir != "" {
+		fmt.Fprintf(os.Stderr, "  app:  %s\n", *appDir)
 	}
 	fmt.Fprintf(os.Stderr, "  listening on http://localhost%s\n", *addr)
 

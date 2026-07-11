@@ -220,6 +220,11 @@ func (s *mcpServer) toolVerify(argsRaw json.RawMessage) (any, error) {
 	if chainErr != nil {
 		verdict["chain_error"] = chainErr.Error()
 	}
+	// Surface an ERC-8004 on-chain anchor if the card claims one. It is a signed
+	// claim; on-chain resolution is left to a caller that trusts the chain.
+	if anchor := card.ERC8004Anchor(); anchor != nil {
+		verdict["anchor"] = anchor.View()
+	}
 	return toolJSON(verdict), nil
 }
 

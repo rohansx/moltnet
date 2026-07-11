@@ -43,6 +43,13 @@ func cmdVerify(args []string) error {
 		hash, _ := card.Hash()
 		fmt.Printf("  [ ok ] card signatures (agent + owner)\n")
 		fmt.Printf("         name=%q version=%s hash=%s\n", card.Name, card.Version, hash)
+		if anchor := card.ERC8004Anchor(); anchor != nil {
+			// The anchor is a signed claim (covered by the card signatures just
+			// verified). Confirming it resolves on-chain is a separate, opt-in
+			// step; here we surface the well-formed, checksummed binding.
+			fmt.Printf("  [ ok ] ERC-8004 anchor (signed claim; on-chain resolution not checked)\n")
+			fmt.Printf("         ref=%s\n", anchor.Ref())
+		}
 	}
 
 	// 2. Attestation signatures + per-issuer chains.

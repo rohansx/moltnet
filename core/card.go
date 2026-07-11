@@ -109,5 +109,19 @@ func (c *Card) Verify() error {
 	if err := Verify(c.Owner, payload, c.OwnerSig); err != nil {
 		return fmt.Errorf("card: owner signature invalid: %w", err)
 	}
+	if _, _, err := ParseERC8004(c.Anchors); err != nil {
+		return fmt.Errorf("card: %w", err)
+	}
 	return nil
+}
+
+// ERC8004Anchor returns the parsed, validated ERC-8004 anchor carried by the
+// card, or nil when the card has none. It assumes the card has already passed
+// Verify (which rejects malformed anchors); a parse error here yields nil.
+func (c *Card) ERC8004Anchor() *ERC8004Anchor {
+	a, _, err := ParseERC8004(c.Anchors)
+	if err != nil {
+		return nil
+	}
+	return a
 }

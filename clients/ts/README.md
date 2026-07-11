@@ -22,6 +22,12 @@ if (result.verified && result.moltscore >= 70) {
 - `computeScore(attestations, issuerWeights?, now?)` — MoltScore v1.
 - `canonicalize` / `canonicalizeWithout` — JCS-compatible canonical JSON.
 - `didFromPublicKey` / `publicKeyFromDid` — did:key <-> Ed25519 key.
+- `parseAnchor(card)` — parse the card's ERC-8004 on-chain anchor (or `null`);
+  validates the CAIP-2 chain + EIP-55 registry and returns a canonical `ref`.
+  `verifyAgent` also exposes it as `result.anchor`, parsed from the *verified*
+  card so trust stays in signatures, not the registry.
+- `keccak256(bytes)` / `checksumAddress(addr)` — dependency-free Keccak-256 and
+  EIP-55 checksumming (used by `parseAnchor`).
 
 ## Scope
 

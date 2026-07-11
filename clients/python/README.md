@@ -23,6 +23,12 @@ if r["verified"] and r["moltscore"] >= 70:
 - `canonicalize` / `canonicalize_without` — JCS-compatible canonical JSON.
 - `did_from_public_key` / `public_key_from_did` — did:key <-> Ed25519 key.
 - `ed25519_verify(public_key, message, signature)` — low-level pure-Python verify.
+- `parse_anchor(card)` — parse the card's ERC-8004 on-chain anchor (or `None`);
+  validates the CAIP-2 chain + EIP-55 registry and returns a canonical `ref`.
+  `verify_agent` also exposes it as `result["anchor"]`, parsed from the
+  *verified* card so trust stays in signatures, not the registry.
+- `keccak256(data)` / `checksum_address(addr)` — dependency-free Keccak-256 and
+  EIP-55 checksumming (used by `parse_anchor`).
 
 ## Test
 

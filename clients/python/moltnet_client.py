@@ -274,6 +274,211 @@ def compute_score(
 
 
 # --------------------------------------------------------------------------- #
+# Keccak-256 (Ethereum padding) — for EIP-55 address checksums
+# A dependency-free port of core/keccak.go, stdlib only. Only used on short
+# inputs (addresses), so clarity beats speed.
+# --------------------------------------------------------------------------- #
+
+_KECCAK_RC = [
+    0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
+    0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
+    0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
+    0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
+    0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
+    0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+]
+_KECCAK_ROTC = [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44]
+_KECCAK_PILN = [10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1]
+_MASK64 = (1 << 64) - 1
+
+
+def _rotl64(x: int, n: int) -> int:
+    return ((x << n) | (x >> (64 - n))) & _MASK64
+
+
+def _keccak_f(a: list[int]) -> None:
+    for rnd in range(24):
+        c = [a[i] ^ a[i + 5] ^ a[i + 10] ^ a[i + 15] ^ a[i + 20] for i in range(5)]
+        for i in range(5):
+            t = c[(i + 4) % 5] ^ _rotl64(c[(i + 1) % 5], 1)
+            for j in range(0, 25, 5):
+                a[j + i] ^= t
+        t = a[1]
+        for i in range(24):
+            j = _KECCAK_PILN[i]
+            bc0 = a[j]
+            a[j] = _rotl64(t, _KECCAK_ROTC[i])
+            t = bc0
+        for j in range(0, 25, 5):
+            bc = [a[j + i] for i in range(5)]
+            for i in range(5):
+                a[j + i] = bc[i] ^ ((~bc[(i + 1) % 5] & _MASK64) & bc[(i + 2) % 5])
+        a[0] ^= _KECCAK_RC[rnd]
+
+
+def keccak256(data: bytes) -> bytes:
+    """Keccak-256 (as used by Ethereum), returned as 32 raw bytes."""
+    rate = 136
+    a = [0] * 25
+
+    def absorb(block: bytes) -> None:
+        for i in range(len(block) // 8):
+            a[i] ^= int.from_bytes(block[i * 8:i * 8 + 8], "little")
+
+    off = 0
+    n = len(data)
+    while n - off >= rate:
+        absorb(data[off:off + rate])
+        _keccak_f(a)
+        off += rate
+
+    block = bytearray(rate)
+    block[:n - off] = data[off:]
+    block[n - off] ^= 0x01
+    block[rate - 1] ^= 0x80
+    absorb(bytes(block))
+    _keccak_f(a)
+
+    out = bytearray()
+    for i in range(4):
+        out += (a[i] & _MASK64).to_bytes(8, "little")
+    return bytes(out)
+
+
+# --------------------------------------------------------------------------- #
+# ERC-8004 anchor parsing (mirrors core/anchor.go)
+# --------------------------------------------------------------------------- #
+
+def _is_hex(s: str) -> bool:
+    return len(s) > 0 and all(c in "0123456789abcdefABCDEF" for c in s)
+
+
+def _is_decimal(s: str) -> bool:
+    return len(s) > 0 and all(c in "0123456789" for c in s)
+
+
+def checksum_address(addr: str) -> str:
+    """Validate a 20-byte hex address and return its EIP-55 checksum form.
+    All-lowercase/all-uppercase input is normalized; genuinely mixed-case input
+    must already carry a correct checksum (rejects typos).
+    """
+    if not addr.startswith("0x"):
+        raise ValueError(f'address "{addr}" must be 0x-prefixed')
+    body = addr[2:]
+    if len(body) != 40 or not _is_hex(body):
+        raise ValueError(f'address "{addr}" must be 20 hex bytes')
+    lower = body.lower()
+    checksummed = _eip55(lower)
+    mixed = body != lower and body != body.upper()
+    if mixed and body != checksummed:
+        raise ValueError(f'address "{addr}" has an invalid EIP-55 checksum')
+    return "0x" + checksummed
+
+
+def _eip55(lower: str) -> str:
+    h = keccak256(lower.encode("ascii"))
+    out = list(lower)
+    for i in range(40):
+        ch = out[i]
+        if ch < "a" or ch > "f":  # digits are never uppercased
+            continue
+        nibble = (h[i // 2] >> 4) if i % 2 == 0 else (h[i // 2] & 0x0F)
+        if nibble >= 8:
+            out[i] = ch.upper()
+    return "".join(out)
+
+
+def _anchor_req_str(o: dict, k: str) -> str:
+    if k not in o:
+        raise ValueError(f'anchor erc8004: missing "{k}"')
+    v = o[k]
+    if not isinstance(v, str):
+        raise ValueError(f'anchor erc8004: "{k}" must be a string')
+    if v == "":
+        raise ValueError(f'anchor erc8004: "{k}" must not be empty')
+    return v
+
+
+def _anchor_opt_str(o: dict, k: str) -> str:
+    if k not in o:
+        return ""
+    v = o[k]
+    if not isinstance(v, str):
+        raise ValueError(f'anchor erc8004: "{k}" must be a string')
+    return v
+
+
+def _anchor_uint(o: dict, k: str) -> str:
+    if k not in o:
+        raise ValueError(f'anchor erc8004: missing "{k}"')
+    v = o[k]
+    if isinstance(v, bool):
+        raise ValueError(f'anchor erc8004: "{k}" must be a decimal string or integer')
+    if isinstance(v, str):
+        if not _is_decimal(v):
+            raise ValueError(f'anchor erc8004: "{k}" must be a decimal integer')
+        if len(v) > 1 and v[0] == "0":
+            raise ValueError(f'anchor erc8004: "{k}" must not have leading zeros')
+        return v
+    if isinstance(v, int):
+        if v < 0:
+            raise ValueError(f'anchor erc8004: "{k}" must be a non-negative integer')
+        return str(v)
+    if isinstance(v, float):
+        if v < 0 or v != int(v):
+            raise ValueError(f'anchor erc8004: "{k}" must be a non-negative integer')
+        return str(int(v))
+    raise ValueError(f'anchor erc8004: "{k}" must be a decimal string or integer')
+
+
+def parse_anchor(card: dict) -> Optional[dict]:
+    """Parse and validate the ERC-8004 anchor carried by a card, mirroring the
+    Go reference. Returns None when the card has no erc8004 anchor; raises
+    ValueError when an anchor is present but malformed. The anchor is read from
+    the card's own signed ``anchors`` object, so a caller that has verified the
+    card can trust the claim without trusting the registry.
+    """
+    anchors = card.get("anchors")
+    if not isinstance(anchors, dict):
+        return None
+    raw = anchors.get("erc8004")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("anchor erc8004: must be an object")
+
+    chain = _anchor_req_str(raw, "chain")
+    rest = chain[len("eip155:"):] if chain.startswith("eip155:") else None
+    if rest is None or not _is_decimal(rest):
+        raise ValueError(f'anchor erc8004: chain "{chain}" must be a CAIP-2 eip155 identifier')
+    if len(rest) > 1 and rest[0] == "0":
+        raise ValueError(f'anchor erc8004: chain "{chain}" has a leading zero')
+
+    registry = checksum_address(_anchor_req_str(raw, "registry"))
+    agent_id = _anchor_uint(raw, "agent_id")
+
+    tx = _anchor_opt_str(raw, "tx")
+    if tx and not (tx.startswith("0x") and len(tx) == 66 and _is_hex(tx[2:])):
+        raise ValueError(f'anchor erc8004: tx "{tx}" must be a 0x-prefixed 32-byte hex hash')
+    card_uri = _anchor_opt_str(raw, "card_uri")
+
+    caip10 = f"{chain}:{registry}"
+    out = {
+        "protocol": "erc8004",
+        "chain": chain,
+        "registry": registry,
+        "agent_id": agent_id,
+        "caip10": caip10,
+        "ref": f"{caip10}/{agent_id}",
+    }
+    if tx:
+        out["tx"] = tx
+    if card_uri:
+        out["card_uri"] = card_uri
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # High-level: verify before invoke
 # --------------------------------------------------------------------------- #
 
@@ -295,6 +500,14 @@ def verify_agent(registry_url: str, did: str) -> dict:
     card_ok = verify_card(card) if card else False
     atts_ok = all(verify_attestation(a) for a in atts)
     out = compute_score(atts, None)
+    # Parse the anchor from the *verified* card, never from the registry's
+    # convenience "anchor" field — trust must stay in the card's signatures.
+    anchor = None
+    if card_ok:
+        try:
+            anchor = parse_anchor(card)
+        except Exception:
+            anchor = None
     return {
         "verified": card_ok and atts_ok,
         "card_ok": card_ok,
@@ -302,4 +515,5 @@ def verify_agent(registry_url: str, did: str) -> dict:
         "moltscore": out["score"],
         "inputs": out["inputs"],
         "attestation_count": len(atts),
+        "anchor": anchor,
     }

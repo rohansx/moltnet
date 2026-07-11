@@ -320,6 +320,78 @@ func TestCardForkSurfaced(t *testing.T) {
 	}
 }
 
+func TestERC8004AnchorSurfaced(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	agent, _ := core.GenerateKeyPair()
+
+	c := core.NewCard(agent.DID, owner.DID, "anchored-agent")
+	// registry given in lowercase; the server should surface the EIP-55 form.
+	c.Anchors = map[string]any{
+		"erc8004": map[string]any{
+			"chain":    "eip155:8453",
+			"registry": "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed",
+			"agent_id": "42",
+		},
+	}
+	if err := c.Sign(agent.Private, owner.Private); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := postJSON(t, ts.URL+"/v1/agents", c); code != 201 {
+		t.Fatalf("register anchored card: %d: %s", code, body)
+	}
+
+	var resp struct {
+		Anchor *struct {
+			Protocol string `json:"protocol"`
+			Chain    string `json:"chain"`
+			Registry string `json:"registry"`
+			AgentID  string `json:"agent_id"`
+			Ref      string `json:"ref"`
+		} `json:"anchor"`
+	}
+	if code := getJSON(t, ts.URL+"/v1/agents/"+agent.DID, &resp); code != 200 {
+		t.Fatalf("get anchored agent: %d", code)
+	}
+	if resp.Anchor == nil {
+		t.Fatal("expected anchor to be surfaced on the agent response")
+	}
+	if resp.Anchor.Protocol != "erc8004" {
+		t.Errorf("protocol = %q", resp.Anchor.Protocol)
+	}
+	if resp.Anchor.Registry != "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed" {
+		t.Errorf("registry not EIP-55 normalized: %q", resp.Anchor.Registry)
+	}
+	if want := "eip155:8453:0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed/42"; resp.Anchor.Ref != want {
+		t.Errorf("ref = %q, want %q", resp.Anchor.Ref, want)
+	}
+}
+
+func TestMalformedAnchorRejected(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	agent, _ := core.GenerateKeyPair()
+
+	c := core.NewCard(agent.DID, owner.DID, "bad-anchor")
+	c.Anchors = map[string]any{
+		"erc8004": map[string]any{
+			"chain":    "eip155:8453",
+			"registry": "0xnot-an-address",
+			"agent_id": "1",
+		},
+	}
+	if err := c.Sign(agent.Private, owner.Private); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := postJSON(t, ts.URL+"/v1/agents", c); code == 201 {
+		t.Fatal("expected registration with a malformed anchor to be rejected")
+	}
+}
+
 func TestAttestationPagination(t *testing.T) {
 	ts, cleanup := testEnv(t)
 	defer cleanup()
@@ -472,9 +544,9 @@ func TestOpenAPISpec(t *testing.T) {
 		t.Fatalf("content-type = %q", ct)
 	}
 	var doc struct {
-		OpenAPI string                 `json:"openapi"`
-		Info    map[string]any         `json:"info"`
-		Paths   map[string]any         `json:"paths"`
+		OpenAPI string         `json:"openapi"`
+		Info    map[string]any `json:"info"`
+		Paths   map[string]any `json:"paths"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
 		t.Fatalf("openapi.json is not valid JSON: %v", err)

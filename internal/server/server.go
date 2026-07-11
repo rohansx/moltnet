@@ -159,6 +159,10 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 	out, _ := s.recomputeScore(did)
 	live, _ := s.Store.GetLiveness(did)
 	resp := map[string]any{"card": c, "score": out, "liveness": live}
+	// Surface a validated ERC-8004 on-chain identity anchor if the card carries one.
+	if anchor := c.ERC8004Anchor(); anchor != nil {
+		resp["anchor"] = anchor.View()
+	}
 	// Surface a card-version fork if one was detected (competing signed versions).
 	if fork, ferr := s.Store.GetFork(did); ferr == nil && fork != nil {
 		resp["fork"] = fork

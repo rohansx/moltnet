@@ -66,6 +66,11 @@ func cmdCard(args []string) error {
 	mcpEndpoint := fs.String("mcp", "", "MCP endpoint binding for the mcp protocol")
 	site := fs.String("site", "", "public site link")
 	source := fs.String("source", "", "source repository link")
+	anchorChain := fs.String("anchor-chain", "", "ERC-8004 CAIP-2 chain, e.g. eip155:8453 (enables anchor)")
+	anchorRegistry := fs.String("anchor-registry", "", "ERC-8004 Identity Registry contract address (0x...)")
+	anchorAgentID := fs.String("anchor-agent-id", "", "ERC-8004 on-chain agent id (uint256, decimal)")
+	anchorTx := fs.String("anchor-tx", "", "ERC-8004 anchoring transaction hash (optional)")
+	anchorCardURI := fs.String("anchor-card-uri", "", "off-chain card URI the on-chain entry points to (optional)")
 	var caps stringSlice
 	fs.Var(&caps, "cap", "capability tag (repeatable, e.g. code.review)")
 	fs.Parse(args[1:])
@@ -107,6 +112,25 @@ func cmdCard(args []string) error {
 	}
 	if *livenessURL != "" {
 		c.Liveness = &core.Liveness{Enabled: true, URL: *livenessURL}
+	}
+	if *anchorChain != "" || *anchorRegistry != "" || *anchorAgentID != "" {
+		anchor := map[string]any{
+			"chain":    *anchorChain,
+			"registry": *anchorRegistry,
+			"agent_id": *anchorAgentID,
+		}
+		if *anchorTx != "" {
+			anchor["tx"] = *anchorTx
+		}
+		if *anchorCardURI != "" {
+			anchor["card_uri"] = *anchorCardURI
+		}
+		// Validate + normalize (EIP-55 checksum etc.) before signing so a
+		// malformed anchor fails locally rather than at registration.
+		if _, _, err := core.ParseERC8004(map[string]any{core.AnchorERC8004: anchor}); err != nil {
+			return err
+		}
+		c.Anchors = map[string]any{core.AnchorERC8004: anchor}
 	}
 	if err := c.Sign(agentKP.Private, ownerKP.Private); err != nil {
 		return err

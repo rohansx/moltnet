@@ -36,8 +36,8 @@ func TestChecksumAddressEIP55(t *testing.T) {
 	}
 
 	bad := []string{
-		"5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", // no 0x
-		"0x5aAeb6053F3E94C9b9A09f33669435E7Ef1Bea",  // too short
+		"5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",   // no 0x
+		"0x5aAeb6053F3E94C9b9A09f33669435E7Ef1Bea",   // too short
 		"0xZZAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", // non-hex
 	}
 	for _, a := range bad {
@@ -109,16 +109,16 @@ func TestParseERC8004Invalid(t *testing.T) {
 		return anchors
 	}
 	cases := map[string]map[string]any{
-		"not an object":     {"erc8004": "nope"},
-		"bad chain prefix":  mutate(func(m map[string]any) { m["chain"] = "solana:mainnet" }),
-		"non-numeric chain": mutate(func(m map[string]any) { m["chain"] = "eip155:base" }),
+		"not an object":      {"erc8004": "nope"},
+		"bad chain prefix":   mutate(func(m map[string]any) { m["chain"] = "solana:mainnet" }),
+		"non-numeric chain":  mutate(func(m map[string]any) { m["chain"] = "eip155:base" }),
 		"leading-zero chain": mutate(func(m map[string]any) { m["chain"] = "eip155:08453" }),
-		"missing registry":  mutate(func(m map[string]any) { delete(m, "registry") }),
-		"bad registry":      mutate(func(m map[string]any) { m["registry"] = "0x1234" }),
-		"missing agent_id":  mutate(func(m map[string]any) { delete(m, "agent_id") }),
-		"negative agent_id": mutate(func(m map[string]any) { m["agent_id"] = float64(-1) }),
-		"leading-zero id":   mutate(func(m map[string]any) { m["agent_id"] = "007" }),
-		"bad tx":            mutate(func(m map[string]any) { m["tx"] = "0xdeadbeef" }),
+		"missing registry":   mutate(func(m map[string]any) { delete(m, "registry") }),
+		"bad registry":       mutate(func(m map[string]any) { m["registry"] = "0x1234" }),
+		"missing agent_id":   mutate(func(m map[string]any) { delete(m, "agent_id") }),
+		"negative agent_id":  mutate(func(m map[string]any) { m["agent_id"] = float64(-1) }),
+		"leading-zero id":    mutate(func(m map[string]any) { m["agent_id"] = "007" }),
+		"bad tx":             mutate(func(m map[string]any) { m["tx"] = "0xdeadbeef" }),
 	}
 	for name, anchors := range cases {
 		if _, present, err := ParseERC8004(anchors); err == nil {

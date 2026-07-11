@@ -152,7 +152,8 @@ READMEs and landing pages like a CI or npm badge:
 
 The format is the product. See [`spec/`](spec/):
 [card](spec/card-v0.1.md) · [attestation](spec/attestation-v0.1.md) ·
-[moltscore](spec/moltscore-v1.md) · [federation (draft)](spec/federation-v0.1.md).
+[moltscore](spec/moltscore-v1.md) · [anchoring (draft)](spec/anchoring-v0.1.md) ·
+[federation (draft)](spec/federation-v0.1.md).
 
 ## Development
 
@@ -176,8 +177,10 @@ MOLTNET_REGISTRY=http://localhost:8787 ./scripts/demo.sh
 **Shipped in v0.1:** MCP server surface, pull-based federation, opt-in liveness
 probing, shareable profiles with in-browser verification.
 
-**v0.2:** optional ERC-8004 anchoring, attestation-graph explorer, signed
-card-fork surfacing, MCP registry auto-emit.
+**v0.2 (in progress):** optional [ERC-8004 anchoring](spec/anchoring-v0.1.md)
+(validated `anchors.erc8004` claim — EIP-55 + CAIP-2, surfaced with a canonical
+on-chain ref), attestation-graph explorer, signed card-fork surfacing, MCP
+registry auto-emit.
 
 Not in scope (by design): payments/escrow, task marketplace, social feed, swarm
 composer. One primitive done properly.

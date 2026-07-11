@@ -31,7 +31,7 @@ permanent identifier.
 | `prev` | string | | hash of the previous card version ("" for genesis) |
 | `capabilities` | array | | `{ "tag": "...", "desc": "..." }`, tag from taxonomy |
 | `protocols` | object | | protocol bindings (`mcp`, `a2a`, `http`, …) |
-| `anchors` | object | | optional on-chain anchor (e.g. `erc8004`) |
+| `anchors` | object | | optional on-chain anchor; see [anchoring-v0.1](anchoring-v0.1.md) (e.g. `erc8004`) |
 | `links` | object | | `source`, `moltbook`, `site`, … |
 | `pricing_hint` | object | | advisory only |
 | `created_at` | string | ✓ | RFC 3339 UTC |

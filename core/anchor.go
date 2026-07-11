@@ -48,6 +48,27 @@ func (a *ERC8004Anchor) Ref() string {
 	return a.CAIP10() + "/" + a.AgentID
 }
 
+// View returns the surfaced JSON representation of the anchor: the validated,
+// normalized fields plus the derived CAIP-10 account id and stable ref. Empty
+// optional fields are omitted.
+func (a *ERC8004Anchor) View() map[string]any {
+	v := map[string]any{
+		"protocol": AnchorERC8004,
+		"chain":    a.Chain,
+		"registry": a.Registry,
+		"agent_id": a.AgentID,
+		"caip10":   a.CAIP10(),
+		"ref":      a.Ref(),
+	}
+	if a.Tx != "" {
+		v["tx"] = a.Tx
+	}
+	if a.CardURI != "" {
+		v["card_uri"] = a.CardURI
+	}
+	return v
+}
+
 // ParseERC8004 extracts and validates the ERC-8004 anchor from a card's anchors
 // map. It returns (nil, false, nil) when no erc8004 anchor is present, and a
 // non-nil error only when an anchor is present but malformed.

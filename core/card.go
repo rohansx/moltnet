@@ -29,22 +29,22 @@ type Liveness struct {
 // addressed (BLAKE3 of the canonical signing payload) and doubly signed by the
 // agent key and the owner key.
 type Card struct {
-	Spec         string                 `json:"spec"`
-	ID           string                 `json:"id"`    // did:key of the agent
-	Name         string                 `json:"name"`
-	Owner        string                 `json:"owner"` // did:key of the owner
-	Description  string                 `json:"description,omitempty"`
-	Version      string                 `json:"version,omitempty"`
-	Prev         string                 `json:"prev,omitempty"` // hash of the previous card version ("" for genesis)
-	Capabilities []Capability           `json:"capabilities,omitempty"`
-	Protocols    map[string]any         `json:"protocols,omitempty"`
-	Anchors      map[string]any         `json:"anchors,omitempty"`
-	Links        map[string]string      `json:"links,omitempty"`
-	PricingHint  map[string]any         `json:"pricing_hint,omitempty"`
-	Liveness     *Liveness              `json:"liveness,omitempty"`
-	CreatedAt    string                 `json:"created_at"`
-	Sig          string                 `json:"sig,omitempty"`       // agent key signature
-	OwnerSig     string                 `json:"owner_sig,omitempty"` // owner key signature
+	Spec         string            `json:"spec"`
+	ID           string            `json:"id"` // did:key of the agent
+	Name         string            `json:"name"`
+	Owner        string            `json:"owner"` // did:key of the owner
+	Description  string            `json:"description,omitempty"`
+	Version      string            `json:"version,omitempty"`
+	Prev         string            `json:"prev,omitempty"` // hash of the previous card version ("" for genesis)
+	Capabilities []Capability      `json:"capabilities,omitempty"`
+	Protocols    map[string]any    `json:"protocols,omitempty"`
+	Anchors      map[string]any    `json:"anchors,omitempty"`
+	Links        map[string]string `json:"links,omitempty"`
+	PricingHint  map[string]any    `json:"pricing_hint,omitempty"`
+	Liveness     *Liveness         `json:"liveness,omitempty"`
+	CreatedAt    string            `json:"created_at"`
+	Sig          string            `json:"sig,omitempty"`       // agent key signature
+	OwnerSig     string            `json:"owner_sig,omitempty"` // owner key signature
 }
 
 // NewCard builds an unsigned card with the spec tag and creation timestamp set.

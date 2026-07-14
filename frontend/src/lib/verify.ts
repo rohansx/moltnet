@@ -1,168 +1,25 @@
-// lib/verify.ts — trustless verification in the browser.
+// lib/verify.ts — the "verify in your browser" flow.
 //
-// This is the flagship: the registry is trusted only to move bytes. We re-check
-// every signature with WebCrypto and recompute MoltScore locally from the raw
-// attestation chain. These functions mirror core/canonical.go, core/crypto.go
-// and score/score.go — keep them in step.
+// This file deliberately contains NO cryptography and NO scoring of its own.
+// Canonicalization, Ed25519 verification and MoltScore all come from
+// @moltnet/client — the same library Node and browser consumers use, which is
+// pinned to the Go reference implementation by spec/conformance/*.json.
+//
+// That matters: canonicalization decides the exact bytes that were signed. A
+// second, subtly different implementation here would produce signatures that
+// verify on the server and fail in the browser (or worse, the reverse). One
+// implementation, one set of conformance vectors. This module only turns those
+// primitives into something a human can read.
 
+import {
+  canonicalizeWithout,
+  computeScore,
+  verifySignature,
+  type Attestation as ClientAttestation,
+  type Card as ClientCard,
+} from '@moltnet/client';
 import type { Attestation, Card } from './api';
-
-const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-
-// WebCrypto's BufferSource requires an ArrayBuffer-backed view (not the
-// SharedArrayBuffer-compatible default), so copy into a fresh ArrayBuffer.
-function toBuf(a: ArrayLike<number>): Uint8Array<ArrayBuffer> {
-  const out = new Uint8Array(new ArrayBuffer(a.length));
-  out.set(a);
-  return out;
-}
-
-function b58decode(str: string): Uint8Array<ArrayBuffer> {
-  const bytes = [0];
-  for (const ch of str) {
-    const val = B58.indexOf(ch);
-    if (val < 0) throw new Error('bad base58');
-    let carry = val;
-    for (let j = 0; j < bytes.length; j++) {
-      carry += bytes[j] * 58;
-      bytes[j] = carry & 0xff;
-      carry >>= 8;
-    }
-    while (carry) {
-      bytes.push(carry & 0xff);
-      carry >>= 8;
-    }
-  }
-  for (const ch of str) {
-    if (ch === '1') bytes.push(0);
-    else break;
-  }
-  return toBuf(bytes.reverse());
-}
-
-/** Recover the Ed25519 public key from a did:key (strips the 0xed01 multicodec). */
-export function pubFromDID(did: string): Uint8Array<ArrayBuffer> {
-  return toBuf(b58decode(did.replace('did:key:z', '')).slice(2));
-}
-
-function hexToBytes(h: string): Uint8Array<ArrayBuffer> {
-  const a = new Uint8Array(new ArrayBuffer(h.length / 2));
-  for (let i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16);
-  return a;
-}
-
-/**
- * JCS-compatible canonical JSON — the exact bytes that were signed.
- * Mirrors core.Canonicalize: object keys sorted, no insignificant whitespace.
- */
-export function canon(v: unknown): string {
-  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
-  if (v && typeof v === 'object') {
-    const o = v as Record<string, unknown>;
-    const keys = Object.keys(o).sort();
-    return '{' + keys.map((k) => JSON.stringify(k) + ':' + canon(o[k])).join(',') + '}';
-  }
-  return JSON.stringify(v);
-}
-
-/** Canonicalize an object with some keys dropped (the signature fields). */
-export function canonWithout(obj: object, drop: string[]): string {
-  const c: Record<string, unknown> = { ...(obj as Record<string, unknown>) };
-  for (const k of drop) delete c[k];
-  return canon(c);
-}
-
-/**
- * Verify a hex Ed25519 signature against a message and a signer's did:key.
- * Returns null (not false) when the browser lacks WebCrypto Ed25519, so callers
- * can distinguish "couldn't check" from "check failed".
- */
-export async function verifySig(did: string, message: string, sigHex: string): Promise<boolean | null> {
-  try {
-    const key = await crypto.subtle.importKey('raw', pubFromDID(did), { name: 'Ed25519' }, false, ['verify']);
-    return await crypto.subtle.verify(
-      { name: 'Ed25519' },
-      key,
-      hexToBytes(sigHex),
-      new TextEncoder().encode(message),
-    );
-  } catch {
-    return null;
-  }
-}
-
-export interface ScoreInputs {
-  completions: number;
-  disputes: number;
-  incidents: number;
-  endorsements: number;
-  receipts: number;
-  distinct_issuers: number;
-}
-
-/**
- * Recompute MoltScore v1 locally from raw attestations — mirrors score/score.go.
- *   x = 1.0·ln(1+Σ decayed positives) + 0.6·ln(1+distinct issuers)
- *       − 1.2·disputes − 2.0·incidents − 2.0
- *   score = 100·σ(x)
- * Half-lives: 180d for positives, 365d for incidents.
- */
-export function recomputeScore(atts: Attestation[]): { score: number; inputs: ScoreInputs } {
-  const HL_POS = 180;
-  const HL_INC = 365;
-  const now = Date.now() / 1000;
-  const decay = (iso: string, hl: number) => {
-    const t = Date.parse(iso) / 1000;
-    if (!t || t > now) return 1;
-    return Math.pow(0.5, (now - t) / 86400 / hl);
-  };
-
-  let wc = 0;
-  let wd = 0;
-  let wi = 0;
-  const issuers = new Set<string>();
-  const inputs: ScoreInputs = {
-    completions: 0,
-    disputes: 0,
-    incidents: 0,
-    endorsements: 0,
-    receipts: 0,
-    distinct_issuers: 0,
-  };
-
-  for (const a of atts) {
-    switch (a.type) {
-      case 'task.completed':
-        inputs.completions++;
-        wc += decay(a.issued_at, HL_POS);
-        issuers.add(a.issuer);
-        break;
-      case 'endorsement':
-        inputs.endorsements++;
-        wc += 0.25 * decay(a.issued_at, HL_POS);
-        issuers.add(a.issuer);
-        break;
-      case 'payment.receipt':
-        inputs.receipts++;
-        wc += 0.5 * decay(a.issued_at, HL_POS);
-        issuers.add(a.issuer);
-        break;
-      case 'task.disputed':
-        inputs.disputes++;
-        wd += decay(a.issued_at, HL_POS);
-        break;
-      case 'incident':
-        inputs.incidents++;
-        wi += decay(a.issued_at, HL_INC);
-        break;
-    }
-  }
-  inputs.distinct_issuers = issuers.size;
-
-  const x = 1.0 * Math.log(1 + wc) + 0.6 * Math.log(1 + issuers.size) - 1.2 * wd - 2.0 * wi - 2.0;
-  const score = Math.round(1000 / (1 + Math.exp(-x))) / 10;
-  return { score, inputs };
-}
+import { hasEd25519 } from './crypto';
 
 export type StepState = 'ok' | 'bad' | 'pend';
 export interface VerifyStep {
@@ -171,59 +28,65 @@ export interface VerifyStep {
 }
 
 /**
- * The full local audit: card signatures, every attestation signature, and a
- * locally recomputed score. Nothing here trusts the registry's own numbers.
+ * The full local audit: both card signatures, every attestation signature, and
+ * a locally recomputed MoltScore. Nothing here trusts the registry's numbers —
+ * it is handed the raw records and re-derives everything.
+ *
+ * We verify signatures one at a time (rather than calling the library's
+ * all-or-nothing verifyAgent) purely so the UI can show which check failed.
  */
 export async function verifyAgent(card: Card, atts: Attestation[]): Promise<VerifyStep[]> {
   const steps: VerifyStep[] = [];
 
-  const payload = canonWithout(card, ['sig', 'owner_sig']);
-  const agentOK = await verifySig(card.id, payload, card.sig || '');
-  const ownerOK = await verifySig(card.owner, payload, card.owner_sig || '');
-
-  if (agentOK === null || ownerOK === null) {
-    steps.push({ state: 'pend', text: 'card signatures — WebCrypto Ed25519 unavailable here; use `molt verify`' });
-  } else {
-    steps.push({ state: agentOK ? 'ok' : 'bad', text: `agent signature ${agentOK ? 'valid' : 'INVALID'}` });
-    steps.push({ state: ownerOK ? 'ok' : 'bad', text: `owner signature ${ownerOK ? 'valid' : 'INVALID'}` });
+  // Distinguish "this browser cannot check" from "this signature is forged".
+  // The library returns false for both; only a feature probe can tell them apart.
+  if (!(await hasEd25519())) {
+    steps.push({
+      state: 'pend',
+      text: 'this browser lacks WebCrypto Ed25519 — run `molt verify` for the full check',
+    });
+    return steps;
   }
+
+  const c = card as unknown as ClientCard;
+  const payload = canonicalizeWithout(c as unknown as Record<string, unknown>, ['sig', 'owner_sig']);
+  const agentOk = await verifySignature(card.id, payload, card.sig || '');
+  const ownerOk = await verifySignature(card.owner, payload, card.owner_sig || '');
+  steps.push({ state: agentOk ? 'ok' : 'bad', text: `agent signature ${agentOk ? 'valid' : 'INVALID'}` });
+  steps.push({ state: ownerOk ? 'ok' : 'bad', text: `owner signature ${ownerOk ? 'valid' : 'INVALID'}` });
 
   let ok = 0;
-  let bad = 0;
-  let skipped = 0;
   for (const a of atts) {
-    const res = await verifySig(a.issuer, canonWithout(a, ['sig']), a.sig || '');
-    if (res === null) skipped++;
-    else if (res) ok++;
-    else bad++;
+    const p = canonicalizeWithout(a as unknown as Record<string, unknown>, ['sig']);
+    if (await verifySignature(a.issuer, p, a.sig || '')) ok++;
   }
   if (atts.length) {
-    if (skipped === atts.length) {
-      steps.push({ state: 'pend', text: `${atts.length} attestation signatures — not checkable in this browser` });
-    } else {
-      steps.push({
-        state: bad ? 'bad' : 'ok',
-        text: `${ok}/${atts.length} attestation signatures valid${bad ? `, ${bad} INVALID` : ''}`,
-      });
-    }
+    const bad = atts.length - ok;
+    steps.push({
+      state: bad ? 'bad' : 'ok',
+      text: `${ok}/${atts.length} attestation signatures valid${bad ? `, ${bad} INVALID` : ''}`,
+    });
   }
 
-  const rc = recomputeScore(atts);
+  // null weights = every issuer counts 1.0: the correct trustless default when
+  // you have only this agent's chain and cannot know how trusted its issuers are.
+  const out = computeScore(atts as unknown as ClientAttestation[], null);
   steps.push({
     state: 'ok',
-    text: `MoltScore recomputed locally: ${rc.score.toFixed(1)} — completions ${rc.inputs.completions}, distinct issuers ${rc.inputs.distinct_issuers}`,
+    text: `MoltScore recomputed locally: ${out.score.toFixed(1)} — completions ${out.inputs.completions}, distinct issuers ${out.inputs.distinct_issuers}`,
   });
   return steps;
 }
 
 /**
- * Recomputing from one agent's chain alone gives every issuer a weight of 1.0,
- * because a standalone verifier cannot know how trustworthy the issuers are.
- * The registry additionally weights each issuer by that issuer's OWN score (its
- * sybil defense), so the registry's published number is normally LOWER. Both are
- * "correct" — they answer different questions — and `molt verify` uses the same
- * uniform-weight basis this page does. Surfacing that keeps an honest gap from
- * looking like a bug.
+ * Why the number above can differ from the one the registry publishes.
+ *
+ * A standalone verifier holding one agent's chain cannot know how trustworthy
+ * that agent's issuers are, so it weights them all at 1.0. The registry also
+ * weights each issuer by that issuer's OWN score (its anti-sybil defence), so
+ * its published figure is normally lower. Both are correct; they answer
+ * different questions. `molt verify` uses this same uniform basis. Saying so
+ * keeps an honest gap from looking like a bug.
  */
 export const UNIFORM_WEIGHT_NOTE =
   'Recomputed with uniform issuer weights — the trustless default, and exactly what `molt verify` does. ' +

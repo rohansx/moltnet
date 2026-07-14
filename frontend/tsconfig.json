@@ -15,7 +15,9 @@
     "moduleDetection": "force",
     "noEmit": true,
     "resolveJsonModule": true,
-    "verbatimModuleSyntax": false
+    "verbatimModuleSyntax": false,
+    "baseUrl": ".",
+    "paths": { "@moltnet/client": ["../clients/ts/src/index.ts"] }
   },
-  "include": ["src"]
+  "include": ["src", "../clients/ts/src"]
 }

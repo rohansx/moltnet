@@ -4,8 +4,7 @@
 // The private keys never leave the machine: they are handed to the user as
 // downloadable keyfiles, byte-compatible with the `molt` CLI.
 
-import { didFromPub } from './crypto';
-import { canon } from './verify';
+import { canonicalize, didFromPublicKey } from '@moltnet/client';
 
 export interface Identity {
   did: string;
@@ -36,7 +35,7 @@ export async function generateIdentity(): Promise<Identity> {
   const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
   const seed = b64urlToBytes(jwk.d!); // the 32-byte seed
   return {
-    did: didFromPub(pub),
+    did: didFromPublicKey(pub),
     key: kp.privateKey,
     pubHex: toHex(pub),
     seedHex: toHex(seed),
@@ -101,7 +100,7 @@ export async function buildSignedCard(opts: {
   if (opts.capabilities.length) card.capabilities = opts.capabilities.map((tag) => ({ tag }));
   if (opts.site) card.links = { site: opts.site };
 
-  const payload = canon(card);
+  const payload = canonicalize(card);
   card.sig = await signWith(opts.agent.key, payload);
   card.owner_sig = await signWith(opts.owner.key, payload);
   return card;

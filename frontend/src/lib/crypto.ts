@@ -1,4 +1,9 @@
-// lib/crypto.ts — Ed25519 helpers for SIWK sign-in.
+// lib/crypto.ts — Ed25519 key loading for SIWK sign-in.
+//
+// did:key encoding comes from @moltnet/client (the same code the conformance
+// vectors pin), so there is exactly one did:key implementation in the tree.
+import { didFromPublicKey } from '@moltnet/client';
+export { didFromPublicKey as didFromPub };
 //
 // WebCrypto can't import a raw Ed25519 *private* key (raw format is public
 // only). So we build a JWK from the keyfile's `public` + the seed and import
@@ -11,8 +16,6 @@ export interface Keyfile {
   public: string; // 32-byte public key hex
   private: string; // 32-byte seed hex (browser) OR 64-byte key hex (CLI)
 }
-
-const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
 function hexToBytes(hex: string): Uint8Array {
   return new Uint8Array(hex.match(/.{2}/g)!.map((x) => parseInt(x, 16)));
@@ -31,37 +34,6 @@ function b64urlToBytes(s: string): Uint8Array {
   const a = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
   return a;
-}
-
-function b58encode(bytes: Uint8Array): string {
-  let d = [0];
-  for (const b of bytes) {
-    let carry = b;
-    for (let j = 0; j < d.length; j++) {
-      carry += d[j] << 8;
-      d[j] = carry % 58;
-      carry = (carry / 58) | 0;
-    }
-    while (carry) {
-      d.push(carry % 58);
-      carry = (carry / 58) | 0;
-    }
-  }
-  let s = '';
-  for (const b of bytes) {
-    if (b === 0) s += '1';
-    else break;
-  }
-  for (let k = d.length - 1; k >= 0; k--) s += B58[d[k]];
-  return s;
-}
-
-export function didFromPub(pub: Uint8Array): string {
-  const buf = new Uint8Array(2 + pub.length);
-  buf[0] = 0xed;
-  buf[1] = 0x01;
-  buf.set(pub, 2);
-  return 'did:key:z' + b58encode(buf);
 }
 
 function toHex(b: Uint8Array): string {
@@ -110,7 +82,7 @@ export async function loadOwnerKey(text: string): Promise<LoadedKey> {
   if (!ej.x) throw new Error('key export failed');
   if (toHex(b64urlToBytes(ej.x)) !== pubHex) throw new Error('keyfile public key does not match its private key');
 
-  const did = kf.did || didFromPub(hexToBytes(pubHex));
+  const did = kf.did || didFromPublicKey(hexToBytes(pubHex));
   return {
     did,
     sign: async (msg: string) => {

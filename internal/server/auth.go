@@ -220,11 +220,14 @@ func (s *Server) sessionFromRequest(r *http.Request) (ownerDID, tokenHash string
 		return "", ""
 	}
 	th := hashToken(token)
-	sess, err := s.Store.GetSession(th, time.Now().UTC().Format(time.RFC3339))
+	now := time.Now().UTC()
+	sess, err := s.Store.GetSession(th, now.Format(time.RFC3339))
 	if err != nil || sess == nil {
 		return "", ""
 	}
-	_ = s.Store.TouchSession(th, time.Now().UTC().Format(time.RFC3339))
+	// Only refresh last_seen if it's over a minute stale, so a burst of owner
+	// reads doesn't become a burst of writes on the single-writer store.
+	_ = s.Store.TouchSession(th, now.Format(time.RFC3339), now.Add(-time.Minute).Format(time.RFC3339))
 	return sess.OwnerDID, th
 }
 

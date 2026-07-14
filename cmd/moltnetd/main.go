@@ -38,7 +38,11 @@ func main() {
 		name   = flag.String("name", "moltnet local instance", "instance name in /.well-known/moltnet")
 		probe  = flag.Duration("probe-interval", 5*time.Minute, "liveness probe sweep interval (0 disables)")
 		fedInt = flag.Duration("federation-interval", 30*time.Second, "federation pull interval (0 disables)")
-		rlimit = flag.Int("rate-limit", 0, "max write requests per client IP per minute (0 disables)")
+		// Non-zero by default: POST /v1/auth/challenge is unauthenticated and
+		// writes a row per call, so an open instance should not ship with every
+		// write path unthrottled. Generous enough that honest clients (register,
+		// attest, sign-in) never notice; set 0 to disable explicitly.
+		rlimit = flag.Int("rate-limit", 120, "max write requests per client IP per minute (0 disables)")
 		logReq = flag.Bool("log-requests", false, "write one structured JSON log line per request to stderr")
 	)
 	var peers peerList

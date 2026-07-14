@@ -112,9 +112,16 @@ func (s *Store) GetSession(tokenHash, now string) (*Session, error) {
 	return &sess, nil
 }
 
-// TouchSession updates last_seen for a session.
-func (s *Store) TouchSession(tokenHash, lastSeen string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`, lastSeen, tokenHash)
+// TouchSession advances last_seen, but only if it is more than staleBefore old.
+// Every authenticated request resolves a session, so an unconditional UPDATE
+// would turn each owner read into a write on the single-writer store. Coalescing
+// on a stale threshold keeps last_seen useful (± that window) while making the
+// common case — a recently-seen session — a pure read.
+func (s *Store) TouchSession(tokenHash, lastSeen, staleBefore string) error {
+	_, err := s.db.Exec(
+		`UPDATE sessions SET last_seen = ?
+         WHERE token_hash = ? AND (last_seen IS NULL OR last_seen < ?)`,
+		lastSeen, tokenHash, staleBefore)
 	return err
 }
 

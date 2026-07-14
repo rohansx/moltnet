@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/moltnet/moltnet/core"
 	"github.com/moltnet/moltnet/score"
@@ -107,6 +108,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sess_owner ON sessions(owner_did);
 CREATE TABLE IF NOT EXISTS api_keys (
+    id         TEXT NOT NULL DEFAULT '',
     key_hash   TEXT PRIMARY KEY,
     agent_did  TEXT NOT NULL,
     owner_did  TEXT NOT NULL,
@@ -119,6 +121,20 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE INDEX IF NOT EXISTS idx_key_owner ON api_keys(owner_did);
 CREATE INDEX IF NOT EXISTS idx_key_agent ON api_keys(agent_did);
 `
+
+// migrations are idempotent statements applied after the schema, for stores
+// created by an earlier version. SQLite has no "ADD COLUMN IF NOT EXISTS", so a
+// duplicate-column error here is the expected no-op and is ignored.
+//
+// api_keys.id: keys were originally identified by their display `prefix`, which
+// carries only 4 random chars and is therefore NOT unique — two of an owner's
+// keys could collide and revocation would silently revoke the wrong one. Keys
+// now carry a unique id; existing rows are backfilled from their (unique) hash.
+var migrations = []string{
+	`ALTER TABLE api_keys ADD COLUMN id TEXT NOT NULL DEFAULT ''`,
+	`UPDATE api_keys SET id = substr(key_hash, 1, 12) WHERE id IS NULL OR id = ''`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_key_id ON api_keys(id)`,
+}
 
 // Open opens (creating if needed) a SQLite-backed store at path. Use ":memory:"
 // for an ephemeral store.
@@ -134,6 +150,13 @@ func Open(path string) (*Store, error) {
 	db.SetMaxOpenConns(1) // serialize writes; simplest correct model for v0.1
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("init schema: %w", err)
+	}
+	for _, m := range migrations {
+		// "duplicate column name" means the migration already ran — that's the
+		// steady state, not a failure. Anything else is a real error.
+		if _, err := db.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return nil, fmt.Errorf("migrate: %w", err)
+		}
 	}
 	return &Store{db: db}, nil
 }

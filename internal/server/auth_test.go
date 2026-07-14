@@ -110,29 +110,57 @@ func TestSIWKLoginAndDashboard(t *testing.T) {
 		t.Fatalf("unauthed me should 401, got %d", code)
 	}
 
-	// 7. dashboard gate redirects when unauthenticated. The gate only registers
-	//    when WebDir is set, so spin up a server pointing at a temp web dir.
+	// 7. SPA serving: a real asset is served as-is, and any client-side route
+	//    falls back to index.html so a deep link / hard refresh works.
+	//    The dashboard SHELL is deliberately public — the trust boundary is the
+	//    API (step 6: /v1/auth/me is 401 without a session), so handing an
+	//    unauthenticated visitor the JS bundle leaks nothing.
 	td := t.TempDir()
-	os.WriteFile(filepath.Join(td, "dashboard.html"), []byte("<!doctype html><title>dash</title>"), 0o644)
+	if err := os.WriteFile(filepath.Join(td, "index.html"), []byte("<!doctype html><title>molt spa</title>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(td, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(td, "assets", "app.js"), []byte("console.log(1)"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	st2, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st2.Close()
-	gated := httptest.NewServer((&Server{Store: st2, WebDir: td, Name: "gate-test", Version: "test"}).Handler())
-	defer gated.Close()
-	noRedirect := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := noRedirect.Get(gated.URL + "/dashboard.html")
+	spa := httptest.NewServer((&Server{Store: st2, AppDir: td, Name: "spa-test", Version: "test"}).Handler())
+	defer spa.Close()
+
+	for _, tc := range []struct{ path, want string }{
+		{"/assets/app.js", "console.log(1)"},   // real file served directly
+		{"/dashboard", "<!doctype html><title>molt spa</title>"}, // client route → shell
+		{"/profile/did:key:zAbc", "<!doctype html><title>molt spa</title>"},
+	} {
+		resp, err := http.Get(spa.URL + tc.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET %s: status %d, want 200", tc.path, resp.StatusCode)
+		}
+		if string(body) != tc.want {
+			t.Fatalf("GET %s: body %q, want %q", tc.path, body, tc.want)
+		}
+	}
+
+	// …and the API behind it stays protected on that same server.
+	resp, err := http.Get(spa.URL + "/v1/auth/me")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != 303 && resp.StatusCode != 302 && resp.StatusCode != 307 {
-		t.Fatalf("unauthed dashboard should redirect, got %d", resp.StatusCode)
-	}
-	if loc := resp.Header.Get("Location"); loc != "/login.html" {
-		t.Fatalf("unauthed dashboard should redirect to /login.html, got %q", loc)
-	}
 	resp.Body.Close()
+	if resp.StatusCode != 401 {
+		t.Fatalf("SPA server /v1/auth/me should still be 401, got %d", resp.StatusCode)
+	}
 }
 
 // TestAPIKeyMintAndAgentMe exercises agent auth: the owner mints an API key for
@@ -165,9 +193,10 @@ func TestAPIKeyMintAndAgentMe(t *testing.T) {
 		t.Fatalf("minting key for agent you don't own should 403, got %d", code)
 	}
 
-	// mint a key for your own agent → returns the full key once
+	// mint a key for your own agent → returns the full key once, plus its id
 	var mint struct {
 		Key    string `json:"key"`
+		ID     string `json:"id"`
 		Prefix string `json:"prefix"`
 	}
 	if code, body := postJSONAuth(t, ts.URL+"/v1/me/apikeys", token, map[string]string{
@@ -177,13 +206,14 @@ func TestAPIKeyMintAndAgentMe(t *testing.T) {
 	} else {
 		decode(t, body, &mint)
 	}
-	if mint.Key == "" || len(mint.Key) < 20 || mint.Prefix == "" {
+	if mint.Key == "" || len(mint.Key) < 20 || mint.Prefix == "" || mint.ID == "" {
 		t.Fatalf("mint response bad: %+v", mint)
 	}
 
-	// list keys → one live key with prefix + last4
+	// list keys → one live key carrying the same unique id
 	var list struct {
 		Keys []struct {
+			ID        string `json:"id"`
 			Prefix    string `json:"prefix"`
 			Last4     string `json:"last4"`
 			RevokedAt string `json:"revoked_at"`
@@ -192,7 +222,7 @@ func TestAPIKeyMintAndAgentMe(t *testing.T) {
 	if code := getJSONAuth(t, ts.URL+"/v1/me/apikeys", token, &list); code != 200 {
 		t.Fatalf("list keys: %d", code)
 	}
-	if len(list.Keys) != 1 || list.Keys[0].Prefix != mint.Prefix {
+	if len(list.Keys) != 1 || list.Keys[0].ID != mint.ID {
 		t.Fatalf("list keys bad: %+v", list)
 	}
 
@@ -215,7 +245,7 @@ func TestAPIKeyMintAndAgentMe(t *testing.T) {
 	}
 
 	// revoke the key, then it stops working
-	if code := deleteJSONAuth(t, ts.URL+"/v1/me/apikeys/"+mint.Prefix, token); code != 200 {
+	if code := deleteJSONAuth(t, ts.URL+"/v1/me/apikeys/"+mint.ID, token); code != 200 {
 		t.Fatalf("revoke: %d", code)
 	}
 	if code := getJSONAuth(t, ts.URL+"/v1/agent/me", mint.Key, nil); code != 401 {

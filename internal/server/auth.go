@@ -61,30 +61,50 @@ func hashToken(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// randBase62 returns n chars from the base62 alphabet.
+// randBase62 returns n chars from the base62 alphabet, uniformly.
+//
+// Rejection sampling, not modulo: 256 is not a multiple of 62, so `byte % 62`
+// would make the first 8 symbols ~25% likelier than the rest and shave entropy
+// off every API key. Bytes >= 248 (the largest multiple of 62) are discarded
+// and redrawn instead.
 func randBase62(n int) (string, error) {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+	const maxUnbiased = 256 - (256 % len(alphabet)) // 248
+	out := make([]byte, 0, n)
+	buf := make([]byte, n)
+	for len(out) < n {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, c := range buf {
+			if int(c) >= maxUnbiased {
+				continue // biased tail — redraw
+			}
+			out = append(out, alphabet[int(c)%len(alphabet)])
+			if len(out) == n {
+				break
+			}
+		}
 	}
-	for i, c := range b {
-		b[i] = alphabet[int(c)%len(alphabet)]
-	}
-	return string(b), nil
+	return string(out), nil
 }
 
-// generateAPIKey mints a full API key and its (hash, display prefix, last4).
-func generateAPIKey() (full, keyHash, prefix, last4 string, err error) {
-	rand, err := randBase62(apiKeyRandLen)
+// generateAPIKey mints a full API key plus its unique id, hash, and display
+// hints. `id` — not `prefix` — is the handle used to revoke: the prefix exposes
+// only 4 random chars, so two of an owner's keys can collide on it.
+func generateAPIKey() (full, id, keyHash, prefix, last4 string, err error) {
+	body, err := randBase62(apiKeyRandLen)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
-	full = apiKeyPrefix + rand
+	if id, err = randHex(6); err != nil { // 12 hex chars, unique per key
+		return "", "", "", "", "", err
+	}
+	full = apiKeyPrefix + body
 	keyHash = hashToken(full)
 	prefix = full[:len(apiKeyPrefix)+4] + "…"
 	last4 = full[len(full)-4:]
-	return full, keyHash, prefix, last4, nil
+	return full, id, keyHash, prefix, last4, nil
 }
 
 // generateSession mints a raw session token and its hash.
@@ -118,9 +138,47 @@ func requestDomain(r *http.Request) string {
 // nowRFC3339 is the current UTC time in RFC3339 (second precision).
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
 
-// setSessionCookie writes the HttpOnly session cookie. Secure is set only on
-// TLS so localhost dev keeps working.
-func setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
+// StartAuthGC reaps spent auth rows on an interval. This is load-bearing, not
+// housekeeping: POST /v1/auth/challenge is unauthenticated and writes a row per
+// call, so without a reaper anyone can grow the DB without bound — and because
+// the store runs on a single write connection, a bloated challenges table drags
+// down every other write (register/attest/rotate) too. Passing interval <= 0
+// disables it.
+func (s *Server) StartAuthGC(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	purge := func() {
+		now := nowRFC3339()
+		if err := s.Store.PurgeChallenges(now); err != nil {
+			s.logf("auth gc: purge challenges: %v", err)
+		}
+		if err := s.Store.PurgeExpiredSessions(now); err != nil {
+			s.logf("auth gc: purge sessions: %v", err)
+		}
+	}
+	purge() // reap anything left over from a previous run at startup
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for range t.C {
+			purge()
+		}
+	}()
+}
+
+// logf writes a line to the server's log sink, if one is configured.
+func (s *Server) logf(format string, args ...any) {
+	if s.LogWriter != nil {
+		fmt.Fprintf(s.LogWriter, format+"\n", args...)
+	}
+}
+
+// setSessionCookie writes the HttpOnly session cookie. Secure is set whenever
+// the request actually arrived over TLS (directly, or via a terminating proxy
+// that set X-Forwarded-Proto), so a real deployment gets a Secure cookie while
+// plain-HTTP localhost dev keeps working.
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookie,
 		Value:    token,
@@ -129,11 +187,17 @@ func setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
 		MaxAge:   int(SessionTTL / time.Second),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r2scheme() == "https",
+		Secure:   isTLS(r),
 	})
 }
 
-func r2scheme() string { return "http" } // local registry; override when behind TLS
+// isTLS reports whether the request reached us over HTTPS.
+func isTLS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
 
 func clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
@@ -184,7 +248,7 @@ func (s *Server) agentKeyFromRequest(r *http.Request) (agentDID, ownerDID string
 
 // requireOwner is middleware gating a handler behind a valid owner session.
 // On failure it writes 401 JSON (API callers) — for the dashboard HTML guard
-// see handleDashboardGate.
+// The SPA shell is public; the API is the trust boundary.
 func (s *Server) requireOwner(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		owner, _ := s.sessionFromRequest(r)
@@ -215,25 +279,19 @@ func ownerFromContext(r *http.Request) string {
 
 // handleSPA serves the built front-end app (frontend/dist). Real files
 // (hashed assets under /assets/) are served directly; everything else falls
-// back to index.html so client-side routes (/login, /dashboard, /) resolve.
-// Legacy static HTML pages (explorer.html, profile.html, register.html, …)
-// are served from WebDir when they exist, preserving the pages not yet ported
-// to the SPA and their shared assets (term2.css, theme.js, …).
+// handleSPA serves the built React app (frontend/dist): real files as-is, and
+// anything else falls back to index.html so client-side routes (/login,
+// /dashboard, /profile/:did, …) resolve on a deep link or hard refresh.
 func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
-	// 1. Legacy static pages + their shared assets, if present in WebDir.
-	if s.WebDir != "" {
-		if f := s.WebDir + p; fileExists(f) {
-			http.ServeFile(w, r, f)
-			return
-		}
-	}
-	// 2. A real file in the SPA build (e.g. /assets/index-*.js).
+	// A real file in the build (e.g. /assets/index-*.js) is served as-is…
 	if f := s.AppDir + p; fileExists(f) {
 		http.ServeFile(w, r, f)
 		return
 	}
-	// 3. SPA fallback: serve index.html for any client-side route.
+	// …anything else is a client-side route: hand back the shell so deep links
+	// and hard refreshes work. Safe because the API, not this handler, is the
+	// trust boundary (/v1/me/* and /v1/auth/me require a session).
 	http.ServeFile(w, r, s.AppDir+"/index.html")
 }
 
@@ -243,20 +301,6 @@ func fileExists(p string) bool {
 }
 
 // ---- dashboard HTML gate --------------------------------------------------
-
-// handleDashboardGate serves dashboard.html only to an authenticated owner;
-// otherwise it redirects to the sign-in page. All other web pages stay public.
-// The shell of dashboard.html is harmless; the real private data lives behind
-// /v1/auth/me + /v1/me/* which enforce auth, but the gate prevents casual
-// browsing of an empty shell.
-func (s *Server) handleDashboardGate(w http.ResponseWriter, r *http.Request) {
-	owner, _ := s.sessionFromRequest(r)
-	if owner == "" {
-		http.Redirect(w, r, "/login.html", http.StatusSeeOther)
-		return
-	}
-	http.ServeFile(w, r, s.WebDir+"/dashboard.html")
-}
 
 // ---- handlers --------------------------------------------------------------
 
@@ -358,7 +402,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "store: "+err.Error())
 		return
 	}
-	setSessionCookie(w, token, exp)
+	setSessionCookie(w, r, token, exp)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"owner_did":  body.DID,
@@ -467,17 +511,19 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "you do not own this agent")
 		return
 	}
-	full, kh, prefix, last4, err := generateAPIKey()
+	full, id, kh, prefix, last4, err := generateAPIKey()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "keygen: "+err.Error())
 		return
 	}
-	if err := s.Store.CreateAPIKey(kh, body.AgentDID, owner, body.Name, prefix, last4, nowRFC3339()); err != nil {
+	if err := s.Store.CreateAPIKey(id, kh, body.AgentDID, owner, body.Name, prefix, last4, nowRFC3339()); err != nil {
 		writeErr(w, http.StatusInternalServerError, "store: "+err.Error())
 		return
 	}
+	// `key` is returned exactly once and never stored in the clear.
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"key":       full,
+		"id":        id,
 		"prefix":    prefix,
 		"last4":     last4,
 		"agent_did": body.AgentDID,
@@ -487,42 +533,24 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // DELETE /v1/me/apikeys/{prefix} — revoke by display prefix. The caller must
-// supply the full key as Bearer, OR be the session owner (identified by
-// matching prefix). To keep it simple and safe, we accept the full key hash
-// via Bearer too; but for the dashboard (session owner) we look up by prefix
-// among that owner's keys.
+// the key's unique id (from the mint response or the list endpoint).
+//
+// The UPDATE is scoped to the session owner, so knowing another owner's key id
+// is not enough to revoke it — that scoping IS the authorization check.
 func (s *Server) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	owner := ownerFromContext(r)
-	prefix := r.PathValue("prefix")
-	if prefix == "" {
-		writeErr(w, http.StatusBadRequest, "prefix is required")
+	id := r.PathValue("id")
+	if id == "" {
+		writeErr(w, http.StatusBadRequest, "key id is required")
 		return
 	}
-	keys, err := s.Store.APIKeysForOwner(owner)
+	revoked, err := s.Store.RevokeAPIKey(id, owner, nowRFC3339())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var match *store.APIKey
-	for i := range keys {
-		if keys[i].Prefix == prefix && keys[i].RevokedAt == "" {
-			match = &keys[i]
-			break
-		}
-	}
-	if match == nil {
-		writeErr(w, http.StatusNotFound, "no live key with that prefix")
-		return
-	}
-	// Revoke by re-hashing: we stored the hash, so find it via prefix match
-	// is not enough — we need the hash. Re-query the hash from the row.
-	kh, err := s.Store.APIKeyHashByPrefix(owner, prefix)
-	if err != nil || kh == "" {
-		writeErr(w, http.StatusNotFound, "key not found")
-		return
-	}
-	if _, err := s.Store.RevokeAPIKey(kh, owner, nowRFC3339()); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	if !revoked {
+		writeErr(w, http.StatusNotFound, "no live key with that id")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"revoked": true})

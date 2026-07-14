@@ -64,6 +64,17 @@ func (s *Store) PurgeChallenges(cutoff string) error {
 	return err
 }
 
+// PurgeExpiredSessions deletes sessions past their expiry. Best-effort.
+//
+// PurgeChallenges + PurgeExpiredSessions are what keep the auth tables bounded:
+// POST /v1/auth/challenge is unauthenticated and inserts a row per call, so
+// without a reaper the table grows without limit. Both are driven by
+// Server.StartAuthGC.
+func (s *Store) PurgeExpiredSessions(now string) error {
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now)
+	return err
+}
+
 // ---- Sessions --------------------------------------------------------------
 
 // Session is an authenticated owner session. TokenHash is SHA-256 of the raw
@@ -128,13 +139,13 @@ type APIKey struct {
 	RevokedAt string `json:"revoked_at,omitempty"`
 }
 
-// CreateAPIKey stores a hashed API key. Prefix is a non-secret display hint
-// (e.g. "molt_sk_live_…ab12"); last4 is the final 4 chars.
-func (s *Store) CreateAPIKey(keyHash, agentDID, ownerDID, name, prefix, last4, createdAt string) error {
+// CreateAPIKey stores a hashed API key. id is the unique, non-secret handle
+// used to revoke it; prefix/last4 are display hints only.
+func (s *Store) CreateAPIKey(id, keyHash, agentDID, ownerDID, name, prefix, last4, createdAt string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO api_keys (key_hash, agent_did, owner_did, name, prefix, last4, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		keyHash, agentDID, ownerDID, name, prefix, last4, createdAt)
+		`INSERT INTO api_keys (id, key_hash, agent_did, owner_did, name, prefix, last4, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, keyHash, agentDID, ownerDID, name, prefix, last4, createdAt)
 	return err
 }
 
@@ -143,7 +154,7 @@ func (s *Store) GetAPIKey(keyHash string) (*APIKey, error) {
 	var k APIKey
 	var revokedAt sql.NullString
 	err := s.db.QueryRow(
-		`SELECT key_hash, agent_did, owner_did, name, prefix, last4, created_at, revoked_at
+		`SELECT id, agent_did, owner_did, name, prefix, last4, created_at, revoked_at
          FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL`, keyHash).
 		Scan(&k.ID, &k.AgentDID, &k.OwnerDID, &k.Name, &k.Prefix, &k.Last4, &k.CreatedAt, &revokedAt)
 	if err == sql.ErrNoRows {
@@ -155,14 +166,13 @@ func (s *Store) GetAPIKey(keyHash string) (*APIKey, error) {
 	if revokedAt.Valid {
 		k.RevokedAt = revokedAt.String
 	}
-	k.ID = k.Prefix
 	return &k, nil
 }
 
 // APIKeysForOwner lists all API keys (revoked ones last) for an owner's agents.
 func (s *Store) APIKeysForOwner(ownerDID string) ([]APIKey, error) {
 	rows, err := s.db.Query(
-		`SELECT key_hash, agent_did, owner_did, name, prefix, last4, created_at, COALESCE(revoked_at,'')
+		`SELECT id, agent_did, owner_did, name, prefix, last4, created_at, COALESCE(revoked_at,'')
          FROM api_keys WHERE owner_did = ?
          ORDER BY (revoked_at IS NULL) DESC, created_at DESC`, ownerDID)
 	if err != nil {
@@ -177,37 +187,25 @@ func (s *Store) APIKeysForOwner(ownerDID string) ([]APIKey, error) {
 			return nil, err
 		}
 		k.RevokedAt = rv
-		k.ID = k.Prefix
 		out = append(out, k)
 	}
 	return out, rows.Err()
 }
 
-// RevokeAPIKey marks an API key revoked. It must belong to the given owner.
-// Returns (false, nil) if no matching live key exists.
-func (s *Store) RevokeAPIKey(keyHash, ownerDID, revokedAt string) (bool, error) {
+// RevokeAPIKey marks an owner's API key revoked, addressed by its unique id.
+// Scoping the UPDATE by owner_did is the authorization check: one owner can
+// never revoke another's key, even knowing its id. Returns (false, nil) if no
+// live key with that id belongs to this owner.
+func (s *Store) RevokeAPIKey(id, ownerDID, revokedAt string) (bool, error) {
 	res, err := s.db.Exec(
 		`UPDATE api_keys SET revoked_at = ?
-         WHERE key_hash = ? AND owner_did = ? AND revoked_at IS NULL`,
-		revokedAt, keyHash, ownerDID)
+         WHERE id = ? AND owner_did = ? AND revoked_at IS NULL`,
+		revokedAt, id, ownerDID)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
 	return n > 0, nil
-}
-
-// APIKeyHashByPrefix returns the stored key hash for an owner's live key
-// with the given display prefix, or "" if none. Used by the revoke flow.
-func (s *Store) APIKeyHashByPrefix(ownerDID, prefix string) (string, error) {
-	var kh string
-	err := s.db.QueryRow(
-		`SELECT key_hash FROM api_keys WHERE owner_did = ? AND prefix = ? AND revoked_at IS NULL`,
-		ownerDID, prefix).Scan(&kh)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	return kh, err
 }
 
 // AgentsByOwner lists every agent whose card owner is ownerDID, newest first,

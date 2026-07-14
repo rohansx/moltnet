@@ -226,6 +226,7 @@ func cmdAPIKeyList(args []string) error {
 	fs.Parse(args)
 	var out struct {
 		Keys []struct {
+			ID        string `json:"id"`
 			Prefix    string `json:"prefix"`
 			Last4     string `json:"last4"`
 			AgentDID  string `json:"agent_did"`
@@ -246,19 +247,24 @@ func cmdAPIKeyList(args []string) error {
 		if k.RevokedAt != "" {
 			st = "revoked"
 		}
-		fmt.Printf("  %-20s %s  %s  %s\n", k.Prefix+"••••"+k.Last4, st, k.Name, k.CreatedAt[:10])
+		created := k.CreatedAt
+		if len(created) > 10 {
+			created = created[:10]
+		}
+		fmt.Printf("  %-14s %-24s %-7s  %s  %s\n", k.ID, k.Prefix+"••••"+k.Last4, st, k.Name, created)
 	}
+	fmt.Println("\nrevoke with: molt apikey revoke --id <id>")
 	return nil
 }
 
 func cmdAPIKeyRevoke(args []string) error {
 	fs := flag.NewFlagSet("apikey revoke", flag.ExitOnError)
-	prefix := fs.String("prefix", "", "display prefix of the key to revoke (required)")
+	id := fs.String("id", "", "id of the key to revoke, from `molt apikey list` (required)")
 	fs.Parse(args)
-	if *prefix == "" {
-		return fmt.Errorf("--prefix is required")
+	if *id == "" {
+		return fmt.Errorf("--id is required (see `molt apikey list`)")
 	}
-	if err := authedDeleteURL("/v1/me/apikeys/"+*prefix, nil); err != nil {
+	if err := authedDeleteURL("/v1/me/apikeys/"+*id, nil); err != nil {
 		return err
 	}
 	fmt.Println("revoked")

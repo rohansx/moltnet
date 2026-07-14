@@ -79,9 +79,9 @@ export function Dashboard() {
           </div>
           <div className="act row g8">
             <ThemeToggle />
-            <a className="btn btn--sig btn--sm" href="/register.html">
+            <Link className="btn btn--sig btn--sm" to="/register">
               + Register
-            </a>
+            </Link>
           </div>
         </header>
         <div className="area">
@@ -165,10 +165,10 @@ function MyAgents({ agents, owner }: { agents: Agent[]; owner: string }) {
     }
   }
 
-  async function revoke(prefix: string) {
+  async function revoke(id: string) {
     if (!confirm('Revoke this API key? Programmatic clients using it lose access immediately.')) return;
     try {
-      await api.revokeKey(prefix);
+      await api.revokeKey(id);
       loadKeys();
     } catch (e) {
       alert('Revoke failed: ' + (e instanceof Error ? e.message : String(e)));
@@ -183,9 +183,9 @@ function MyAgents({ agents, owner }: { agents: Agent[]; owner: string }) {
           {owner}
         </div>
         <div className="row g8 wrap" style={{ marginTop: 16, marginBottom: 20 }}>
-          <a className="btn btn--sig btn--sm" href="/register.html">
+          <Link className="btn btn--sig btn--sm" to="/register">
             + Register a new agent
-          </a>
+          </Link>
           <span className="faint" style={{ fontSize: 11, alignSelf: 'center' }}>
             keys generated in your browser · card signed locally
           </span>
@@ -195,7 +195,7 @@ function MyAgents({ agents, owner }: { agents: Agent[]; owner: string }) {
       <SectionHead>Your agents {agents.length ? `(${agents.length})` : ''}</SectionHead>
       {agents.length === 0 ? (
         <div className="box" style={{ padding: 24, textAlign: 'center', color: 'var(--ink-4)', fontSize: 12 }}>
-          You have no agents yet. <a href="/register.html" style={{ color: 'var(--ac)' }}>Register one</a> — your owner key is what signs you in here.
+          You have no agents yet. <Link to="/register" style={{ color: 'var(--ac)' }}>Register one</Link> — your owner key is what signs you in here.
         </div>
       ) : (
         <div className="mine-list">
@@ -223,7 +223,7 @@ function MyAgents({ agents, owner }: { agents: Agent[]; owner: string }) {
                 </div>
                 <div className="acts" style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
                   <span className={`tier ${t.cls}`}>{t.label}</span>
-                  <a className="btn btn--ghost btn--sm" href={`/profile.html?did=${encodeURIComponent(a.id)}`}>
+                  <a className="btn btn--ghost btn--sm" href={`/profile/${encodeURIComponent(a.id)}`}>
                     Profile →
                   </a>
                 </div>
@@ -294,7 +294,7 @@ function MyAgents({ agents, owner }: { agents: Agent[]; owner: string }) {
       ) : (
         <div>
           {keys.map((k) => (
-            <div className={`keyrow ${k.revoked_at ? 'revoked' : ''}`} key={k.prefix + k.created_at}>
+            <div className={`keyrow ${k.revoked_at ? 'revoked' : ''}`} key={k.id}>
               <div>
                 <div className="pf" style={{ fontFamily: 'var(--fd)', color: 'var(--ink-2)' }}>
                   {k.prefix}••••{k.last4}
@@ -309,7 +309,7 @@ function MyAgents({ agents, owner }: { agents: Agent[]; owner: string }) {
               {k.revoked_at ? (
                 <span className="faint" style={{ fontSize: 10 }}>—</span>
               ) : (
-                <button className="btn btn--ghost btn--sm" onClick={() => revoke(k.prefix)}>
+                <button className="btn btn--ghost btn--sm" onClick={() => revoke(k.id)}>
                   Revoke
                 </button>
               )}
@@ -436,7 +436,7 @@ function Overview() {
         ) : (
           <div className="empty">no attestations — issue one with <code>molt attest</code></div>
         )}
-        <a className="btn btn--ghost btn--sm" style={{ marginTop: 12 }} href={`/profile.html?did=${encodeURIComponent(agent.id)}`}>Open full profile →</a>
+        <a className="btn btn--ghost btn--sm" style={{ marginTop: 12 }} href={`/profile/${encodeURIComponent(agent.id)}`}>Open full profile →</a>
       </div>
     </>
   );
@@ -541,7 +541,7 @@ function Discovery() {
               results.map((a) => {
                 const t = tier(a.score || 0);
                 return (
-                  <a key={a.id} className="rcard" href={`/profile.html?did=${encodeURIComponent(a.id)}`} style={{ border: '1px solid var(--line-2)', background: 'var(--sf)', padding: '14px 16px' }}>
+                  <a key={a.id} className="rcard" href={`/profile/${encodeURIComponent(a.id)}`} style={{ border: '1px solid var(--line-2)', background: 'var(--sf)', padding: '14px 16px' }}>
                     <div className="top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
                       <span className="nm" style={{ fontWeight: 600, fontSize: 13 }}>{a.name || 'unnamed'}</span>
                       <span>
@@ -602,7 +602,7 @@ function Genome() {
           </span>
           <div className="kv"><span className="k">Nodes</span><span className="ld" /><span className="v">{g.nodes.length}</span></div>
           <div className="kv"><span className="k">Collaboration edges</span><span className="ld" /><span className="v">{g.edges.length}</span></div>
-          <div className="kv"><span className="k">Open full graph</span><span className="ld" /><span className="v"><a href="/graph.html">graph.html →</a></span></div>
+          <div className="kv"><span className="k">Open full graph</span><span className="ld" /><span className="v"><Link to="/graph">open graph →</Link></span></div>
         </div>
         <div className="box">
           <span className="box__l">

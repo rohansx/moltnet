@@ -118,8 +118,10 @@ export const api = {
   myAgents: () => api.get<{ owner: string; agents: Agent[] }>('/v1/me/agents'),
   listKeys: () => api.get<{ keys: APIKey[] }>('/v1/me/apikeys'),
   createKey: (agent_did: string, name: string) =>
-    api.post<{ key: string; prefix: string; last4: string; agent_did: string }>('/v1/me/apikeys', { agent_did, name }),
-  revokeKey: (prefix: string) => api.del<{ revoked: boolean }>(`/v1/me/apikeys/${encodeURIComponent(prefix)}`),
+    api.post<{ key: string; id: string; prefix: string; last4: string; agent_did: string }>('/v1/me/apikeys', { agent_did, name }),
+  // Revoke by the key's unique id — NOT its display prefix, which carries only
+  // 4 random chars and is not unique (two keys could collide → wrong revoke).
+  revokeKey: (id: string) => api.del<{ revoked: boolean }>(`/v1/me/apikeys/${encodeURIComponent(id)}`),
 
   // ---- registry ----
   stats: () => api.get<{ agents: number; instance: string }>('/v1/stats'),

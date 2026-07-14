@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { loadOwnerKey, hasEd25519 } from '../lib/crypto';
 import { Spine, ThemeToggle } from '../components/Chrome';
@@ -17,6 +17,7 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [noCrypto, setNoCrypto] = useState(false);
+  const [pasted, setPasted] = useState('');
 
   // feature-detect once
   if (!noCrypto) hasEd25519().then((ok) => !ok && setNoCrypto(true));
@@ -35,14 +36,25 @@ export function Login() {
     }
   }
 
-  async function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
-    const text = e.clipboardData.getData('text').trim();
-    if (!text.startsWith('{')) {
-      setError('Paste the full owner.key JSON (with public + private), not a raw seed.');
-      return;
+  // Parse on every change rather than only on a clipboard event, so typing,
+  // pasting, drag-drop and autofill all work. A half-entered value is the normal
+  // case, so stay quiet until it actually looks like a complete keyfile.
+  async function onKeyText(text: string) {
+    setPasted(text);
+    setError('');
+    setSigner(null);
+    setDid('');
+    const t = text.trim();
+    if (!t) return;
+    if (!t.startsWith('{')) {
+      if (/^[0-9a-fA-F]{64,128}$/.test(t)) {
+        setError('That is a raw private key. Paste the full owner.key JSON (it also carries the public key).');
+      }
+      return; // still typing
     }
+    if (!t.endsWith('}')) return; // incomplete JSON — wait
     try {
-      const key = await loadOwnerKey(text);
+      const key = await loadOwnerKey(t);
       setSigner({ sign: key.sign });
       setDid(key.did);
       setFileName('pasted keyfile');
@@ -126,11 +138,12 @@ export function Login() {
             OR PASTE KEYFILE JSON
             <span style={{ flex: 1, borderTop: '1px solid var(--line)' }} />
           </div>
-          <input
-            style={{ width: '100%' }}
-            placeholder="paste the contents of owner.key"
-            onPaste={onPaste}
-            onFocus={(e) => e.target.select()}
+          <textarea
+            style={{ width: '100%', minHeight: 78, resize: 'vertical' }}
+            placeholder='paste the contents of owner.key  {"did":"…","public":"…","private":"…"}'
+            value={pasted}
+            onChange={(e) => onKeyText(e.target.value)}
+            spellCheck={false}
           />
 
           {did && (
@@ -164,7 +177,7 @@ export function Login() {
           )}
 
           <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 16, lineHeight: 1.6, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
-            Don't have an owner key? <a href="/register.html" style={{ color: 'var(--ac)' }}>Register an agent</a> first — the
+            Don't have an owner key? <Link to="/register" style={{ color: 'var(--ac)' }}>Register an agent</Link> first — the
             owner key is generated in your browser and offered for download.
           </div>
           <div style={{ marginTop: 18, textAlign: 'center' }}>

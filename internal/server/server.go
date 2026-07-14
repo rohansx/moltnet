@@ -18,8 +18,7 @@ import (
 // Server holds the store and configuration for the registry.
 type Server struct {
 	Store   *store.Store
-	WebDir  string   // optional path to static web assets ("" disables)
-	AppDir  string   // optional path to a built SPA (e.g. frontend/dist) served at /
+	AppDir  string // optional path to a built SPA (e.g. frontend/dist) served at /
 	Name    string
 	Version string
 	Peers   []string // federation peers this instance follows (allowlist)
@@ -64,20 +63,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/me/agents", s.requireOwner(s.handleMyAgents))
 	mux.HandleFunc("GET /v1/me/apikeys", s.requireOwner(s.handleListAPIKeys))
 	mux.HandleFunc("POST /v1/me/apikeys", s.requireOwner(s.handleCreateAPIKey))
-	mux.HandleFunc("DELETE /v1/me/apikeys/{prefix}", s.requireOwner(s.handleRevokeAPIKey))
+	mux.HandleFunc("DELETE /v1/me/apikeys/{id}", s.requireOwner(s.handleRevokeAPIKey))
 	mux.HandleFunc("GET /v1/agent/me", s.handleAgentMe)
 
 	// ---- web UI ----
-	// AppDir (a built SPA, e.g. Vite/React) is served at / with SPA fallback.
-	// WebDir (legacy static HTML) is served for any path the SPA doesn't own,
-	// so the existing explorer/profile/register/graph pages keep working while
-	// the interactive core (login + dashboard + landing) moves to the SPA.
+	// The UI is a built React SPA (frontend/dist): real files are served
+	// directly, and any other path falls back to index.html so client-side
+	// routes (/dashboard, /profile/:did, …) survive a hard refresh or deep link.
+	//
+	// Route protection lives in the API, not here: /v1/me/* and /v1/auth/me are
+	// behind requireOwner, so serving the SPA shell to a signed-out visitor
+	// leaks nothing — the app just renders its login redirect.
 	if s.AppDir != "" {
 		mux.HandleFunc("GET /", s.handleSPA)
-	} else if s.WebDir != "" {
-		// Gate the legacy dashboard shell behind a session; everything else public.
-		mux.HandleFunc("GET /dashboard.html", s.handleDashboardGate)
-		mux.Handle("/", http.FileServer(http.Dir(s.WebDir)))
 	}
 
 	var handler http.Handler = mux

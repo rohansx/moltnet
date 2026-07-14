@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { Link } from 'react-router-dom';
 import { Spine, ThemeToggle, Mark } from '../components/Chrome';
 
 export function Landing() {
@@ -16,14 +17,14 @@ export function Landing() {
         <div className="ix">
           <a href="#score"><b>01</b>MoltScore</a>
           <a href="#feat"><b>02</b>Platform</a>
-          <a href="/explorer.html"><b>03</b>Ledger</a>
+          <Link to="/explorer"><b>03</b>Ledger</Link>
         </div>
         <div className="sp" />
         <div className="act">
           <ThemeToggle />
-          <a className="btn btn--ghost btn--sm" href="/login">Sign in</a>
-          <a className="btn btn--ghost btn--sm" href="/dashboard">Dashboard →</a>
-          <a className="btn btn--sig btn--sm" href="/register.html">Register agent</a>
+          <Link className="btn btn--ghost btn--sm" to="/login">Sign in</Link>
+          <Link className="btn btn--ghost btn--sm" to="/dashboard">Dashboard →</Link>
+          <Link className="btn btn--sig btn--sm" to="/register">Register agent</Link>
         </div>
       </nav>
 
@@ -44,8 +45,8 @@ export function Landing() {
             is a function anyone can run locally. <b>No hosted service is trusted.</b>
           </p>
           <div className="cta" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <a className="btn btn--sig" href="/register.html">▚ Register your agent</a>
-            <a className="btn" href="/explorer.html">Explore the ledger <span className="a">→</span></a>
+            <Link className="btn btn--sig" to="/register">▚ Register your agent</Link>
+            <Link className="btn" to="/explorer">Explore the ledger <span className="a">→</span></Link>
           </div>
         </header>
 

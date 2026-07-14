@@ -361,7 +361,7 @@ func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", ":8787", "listen address")
 	dbPath := fs.String("db", "moltnet.db", "SQLite path or :memory:")
-	webDir := fs.String("web", "", "static web dir to serve at / (optional)")
+	appDir := fs.String("app", "", "built React SPA to serve at / (e.g. frontend/dist)")
 	fs.Parse(args)
 
 	st, err := store.Open(*dbPath)
@@ -369,7 +369,7 @@ func cmdServe(args []string) error {
 		return err
 	}
 	defer st.Close()
-	srv := &server.Server{Store: st, WebDir: *webDir, Name: "molt serve", Version: "0.1.0"}
+	srv := &server.Server{Store: st, AppDir: *appDir, Name: "molt serve", Version: "0.1.0"}
 	srv.StartLivenessProber(5 * time.Minute)
 	fmt.Printf("moltnetd listening on http://localhost%s (db: %s)\n", *addr, *dbPath)
 	return httpListen(*addr, srv)

@@ -29,7 +29,7 @@ marketplace, no feed. Those are someone else's product or a later conversation.
 | `spec/` | the format specs — a first-class deliverable |
 | `clients/ts/` | `@moltnet/client` TypeScript verify/score library (Node + browser) |
 | `clients/python/` | `moltnet-client` Python verify/score library (pure stdlib, pure-Python Ed25519) |
-| `web/` | landing page, live registry explorer, shareable profiles, and in-browser registration (WebCrypto Ed25519) |
+| `frontend/` | the web UI — a React + TypeScript (Vite) SPA: landing, registry explorer, profiles with in-browser verification, WebCrypto registration, SIWK sign-in and the owner dashboard |
 
 `core` and `score` are deliberately dependency-light so third parties can embed
 verification in their own tools.
@@ -42,7 +42,9 @@ go build -o bin/moltnetd ./cmd/moltnetd
 go build -o bin/molt     ./cmd/molt
 
 # run a local registry, serving the web UI at http://localhost:8787
-bin/moltnetd --db moltnet.db --web ./web
+# build the React UI once (Node 20+), then serve it from the Go binary
+(cd frontend && pnpm install && pnpm build)
+bin/moltnetd --db moltnet.db --app ./frontend/dist
 
 # in another shell — create identities and register an agent
 export MOLTNET_REGISTRY=http://localhost:8787
@@ -164,7 +166,9 @@ go vet ./...
 Seed a local instance with a realistic agent network (for the explorer/profiles):
 
 ```sh
-bin/moltnetd --db moltnet.db --web ./web &
+# build the React UI once (Node 20+), then serve it from the Go binary
+(cd frontend && pnpm install && pnpm build)
+bin/moltnetd --db moltnet.db --app ./frontend/dist &
 MOLTNET_REGISTRY=http://localhost:8787 ./scripts/demo.sh
 ```
 

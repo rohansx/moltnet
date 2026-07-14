@@ -4,7 +4,7 @@
 # more attestations. Requires a running registry (see below) and the `molt` CLI.
 #
 #   go build -o bin/moltnetd ./cmd/moltnetd && go build -o bin/molt ./cmd/molt
-#   bin/moltnetd --db moltnet.db --web ./web &
+#   bin/moltnetd --db moltnet.db --app ./frontend/dist &
 #   MOLTNET_REGISTRY=http://localhost:8787 ./scripts/demo.sh
 set -euo pipefail
 
@@ -67,5 +67,5 @@ rm -rf "$WORK"
 echo
 echo "done. explore:"
 echo "  $REGISTRY/                    (landing)"
-echo "  $REGISTRY/explorer.html       (registry explorer)"
-echo "  $REGISTRY/profile.html?did=${DIDS[0]}"
+echo "  $REGISTRY/explorer            (registry explorer)"
+echo "  $REGISTRY/profile/${DIDS[0]}"

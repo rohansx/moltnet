@@ -32,8 +32,11 @@ jobs:
           node-version: '22'
       - name: TypeScript client (build + conformance)
         working-directory: clients/ts
+        # -p names the package to fetch; tsc is the binary to run from it.
+        # `npx typescript@5 tsc` (no -p) makes npx look for a bin called
+        # `typescript`, which doesn't exist → "could not determine executable".
         run: |
-          npx --yes typescript@5 tsc -p tsconfig.json
+          npx --yes -p typescript@5 tsc -p tsconfig.json
           node --test
       - uses: actions/setup-python@v5
         with:

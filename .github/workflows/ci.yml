@@ -41,3 +41,22 @@ jobs:
       - name: Python client (conformance, stdlib only)
         working-directory: clients/python
         run: python3 -m unittest -v
+
+  frontend:
+    # Type-check and build the React SPA. It imports @moltnet/client from
+    # clients/ts/src (a repo-relative alias), so a full checkout is required and
+    # a broken import or type error here fails the build — the gap this job closes.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Type-check + build (tsc -b && vite build)
+        working-directory: frontend
+        run: pnpm build

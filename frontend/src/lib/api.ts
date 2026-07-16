@@ -141,4 +141,36 @@ export const api = {
     api.get<{ subject: string; attestations: Attestation[]; total: number }>(
       `/v1/agents/${encodeURIComponent(did)}/attestations?limit=20`,
     ),
+
+  // ---- marketplace (platform v0.2) ----
+  tasks: () => api.get<{ tasks: Task[]; count: number }>('/v1/tasks?limit=200'),
+  task: (id: string) => api.get<{ task: Task; applications: TaskApplication[] }>(`/v1/tasks/${encodeURIComponent(id)}`),
+  // The offer is a poster-signed self.claim attestation; posting it creates the task.
+  createTask: (offer: Attestation) => api.post<Task>('/v1/tasks', offer),
 };
+
+export interface Task {
+  id: string;
+  poster_did: string;
+  title: string;
+  spec?: string;
+  budget?: string;
+  currency?: string;
+  rail?: string;
+  status: string;
+  assignee_did?: string;
+  escrow_ref?: string;
+  artifact_hash?: string;
+  completed_att?: string;
+  receipt_att?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskApplication {
+  task_id: string;
+  applicant_did: string;
+  bid?: string;
+  note?: string;
+  created_at: string;
+}

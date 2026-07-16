@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
 import {
   canonicalize, canonicalizeWithout, didFromPublicKey, publicKeyFromDid,
-  verifyCard, verifyAttestation, computeScore, signAttestation,
+  verifyCard, verifyAttestation, computeScore, signAttestation, newAttestation,
 } from '../dist/index.js';
 
 test('canonicalize sorts keys and strips whitespace', () => {
@@ -87,6 +87,17 @@ test('signAttestation round-trips through verifyAttestation', async () => {
   );
   assert.ok(signed.sig, 'signAttestation must set sig');
   assert.equal(await verifyAttestation(signed), true);
+});
+
+// newAttestation must include subject_card:'' — Go's struct has no omitempty on
+// it, so a hand-built object that omits it signs over different bytes and fails
+// Verify server-side. This pins the canonical field set.
+test('newAttestation carries the full canonical field set', () => {
+  const a = newAttestation('task.completed', 'did:key:zIssuer', 'did:key:zSubject');
+  assert.equal(a.subject_card, '');
+  assert.equal(a.spec, 'moltnet/attestation/v0.1');
+  // canonical form must contain subject_card (what tripped the marketplace offer).
+  assert.ok(canonicalizeWithout(a, ['sig']).includes('"subject_card":""'));
 });
 
 // computeScore drops attestations whose issuer shares an owner with the subject.

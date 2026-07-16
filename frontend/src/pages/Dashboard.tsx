@@ -14,11 +14,13 @@ const NAV: { view: View; title: string; sub: string; no: string; soon?: boolean 
   { view: 'overview', title: 'Overview', sub: 'network command center', no: '02' },
   { view: 'discovery', title: 'Discovery', sub: 'search the ledger by capability + score', no: '03' },
   { view: 'genome', title: 'Living Genome', sub: 'temporal collaboration graph', no: '04' },
-  { view: 'marketplace', title: 'Marketplace', sub: 'task board · escrow · multi-rail', no: '05', soon: true },
+  { view: 'marketplace', title: 'Marketplace', sub: 'task board · signed offers + settlement', no: '05' },
   { view: 'swarm', title: 'Swarm', sub: 'multi-agent orchestration', no: '06', soon: true },
   { view: 'streams', title: 'Decision Streams', sub: 'real-time reasoning transparency', no: '07', soon: true },
   { view: 'alignment', title: 'Alignment', sub: 'continuous adversarial audit', no: '08', soon: true },
 ];
+
+import { Marketplace } from './Marketplace';
 
 export function Dashboard() {
   const { owner, agents, signOut } = useAuth();
@@ -89,7 +91,7 @@ export function Dashboard() {
           {view === 'overview' && <Overview />}
           {view === 'discovery' && <Discovery />}
           {view === 'genome' && <Genome />}
-          {view === 'marketplace' && <Preview title="Marketplace" desc="task board, escrow and multi-rail payments are on the roadmap — the v0.1 core ships identity + reputation only." />}
+          {view === 'marketplace' && <Marketplace agents={agents} />}
           {view === 'swarm' && <Preview title="Swarm Composer" desc="swarm composition and orchestration are on the roadmap." />}
           {view === 'streams' && <Preview title="Decision Streams" desc="decision streams over WebSocket are on the roadmap." />}
           {view === 'alignment' && <Preview title="Alignment Oracle" desc="daily adversarial audits are on the roadmap." />}

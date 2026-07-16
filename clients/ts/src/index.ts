@@ -268,6 +268,26 @@ export async function verifyAgent(
 export type Signer = (message: string) => Promise<string>;
 
 /**
+ * Build an attestation with the exact field set the Go reference serializes, so
+ * a browser-signed record canonicalizes byte-for-byte the same as the server's.
+ *
+ * This is load-bearing: core.Attestation.SubjectCard has NO `omitempty`, so Go
+ * always emits `"subject_card":""`. A hand-built object that omits it signs over
+ * different bytes and fails Verify server-side. Always build attestations here.
+ */
+export function newAttestation(type: string, issuer: string, subject: string): Attestation {
+  return {
+    spec: 'moltnet/attestation/v0.1',
+    type,
+    subject,
+    subject_card: '',
+    issuer,
+    issued_at: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+    body: {},
+  };
+}
+
+/**
  * Sign an attestation: canonicalize it WITHOUT `sig` (the exact bytes the server
  * re-checks), sign them, and return a copy with `sig` set. The signer maps a
  * canonical string to a hex Ed25519 signature — a WebCrypto key in the browser

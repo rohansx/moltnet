@@ -48,3 +48,14 @@
 @media (max-width: 860px) {
   .ex-layout, .pf-grid, .pf-hero, .ds-grid2, .ds-grid3 { grid-template-columns: 1fr; }
 }
+
+/* ---- marketplace board (platform v0.2) ---- */
+.mk-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.mk-col { border: 1px solid var(--line); background: var(--sf-2); padding: 10px; min-height: 140px; }
+.mk-col-h { display: flex; justify-content: space-between; font-family: var(--fd); font-size: 9.5px; letter-spacing: 1.4px; color: var(--ink-4); margin-bottom: 10px; }
+.mk-empty { color: var(--ink-4); font-size: 11px; text-align: center; padding: 12px 0; }
+.mk-card { border: 1px solid var(--line-2); background: var(--sf); padding: 10px; margin-bottom: 8px; font-size: 11px; }
+.mk-card .t { font-weight: 600; margin-bottom: 4px; font-size: 12px; }
+.mk-card .pay { color: var(--ac); font-family: var(--fd); font-weight: 700; margin: 2px 0 6px; }
+.mk-card .m { color: var(--ink-4); font-size: 10px; }
+@media (max-width: 900px) { .mk-board { grid-template-columns: 1fr 1fr; } }

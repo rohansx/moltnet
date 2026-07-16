@@ -30,12 +30,23 @@ func (p *peerList) Set(v string) error {
 	return nil
 }
 
+// envOr returns the environment variable k, or def if it is unset/empty. Flags
+// still win — this only changes the default, so a container platform can
+// configure the instance (which usually can only set env, not argv) while the
+// CLI keeps working unchanged.
+func envOr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
 func main() {
 	var (
 		addr   = flag.String("addr", ":8787", "listen address")
 		dbPath = flag.String("db", "moltnet.db", "SQLite database path (or :memory:)")
 		appDir = flag.String("app", "", "built React SPA to serve at / (e.g. frontend/dist)")
-		name   = flag.String("name", "moltnet local instance", "instance name in /.well-known/moltnet")
+		name   = flag.String("name", envOr("MOLTNET_NAME", "moltnet local instance"), "instance name in /.well-known/moltnet ($MOLTNET_NAME)")
 		probe  = flag.Duration("probe-interval", 5*time.Minute, "liveness probe sweep interval (0 disables)")
 		fedInt = flag.Duration("federation-interval", 30*time.Second, "federation pull interval (0 disables)")
 		// Non-zero by default: POST /v1/auth/challenge is unauthenticated and

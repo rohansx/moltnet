@@ -1,0 +1,7 @@
+# Automatic HTTPS for the registry. Caddy fetches + renews a Let's Encrypt cert
+# for $MOLT_DOMAIN and proxies to moltnetd. It sets X-Forwarded-Proto=https, so
+# moltnetd marks the owner session cookie Secure. HTTP is auto-redirected to HTTPS.
+{$MOLT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy moltnetd:8787
+}

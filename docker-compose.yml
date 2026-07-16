@@ -1,0 +1,43 @@
+# Production stack for a single VPS: moltnetd behind Caddy for automatic HTTPS.
+#
+#   MOLT_DOMAIN=registry.example.com docker compose up -d --build
+#
+# Caddy terminates TLS on 443, obtains/renews a Let's Encrypt cert for
+# $MOLT_DOMAIN, and reverse-proxies to moltnetd on the internal network — setting
+# X-Forwarded-Proto=https, which moltnetd reads to mark the session cookie Secure.
+# moltnetd is NOT published to the host, so only Caddy is reachable from outside.
+services:
+  moltnetd:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "8787"          # internal only; Caddy proxies to it
+    volumes:
+      - moltdata:/data  # SQLite lives here and survives redeploys
+    # image CMD already runs: --db /data/moltnet.db --app /app --rate-limit 120
+    healthcheck:
+      # distroless has no shell, so probe with the molt binary that ships in the image.
+      test: ["CMD", "/usr/local/bin/molt", "verify", "--help"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MOLT_DOMAIN: ${MOLT_DOMAIN:?set MOLT_DOMAIN to your registry hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data     # ACME account + certs (persist to avoid rate limits)
+      - caddy_config:/config
+    depends_on:
+      - moltnetd
+
+volumes:
+  moltdata:
+  caddy_data:
+  caddy_config:

@@ -63,3 +63,14 @@ jobs:
       - name: Type-check + build (tsc -b && vite build)
         working-directory: frontend
         run: pnpm build
+
+  image:
+    # Build the production image. The Dockerfile's web stage bundles the SPA in
+    # isolation (only frontend/ + clients/), a different context than the
+    # whole-repo checkout the `frontend` job uses — so a missing COPY here would
+    # pass CI yet fail the real image build. This job closes that gap.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker build
+        run: docker build -t moltnet:ci .

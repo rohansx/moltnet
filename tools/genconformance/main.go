@@ -68,7 +68,7 @@ func main() {
 	}
 	var svs []scoreVector
 	for _, sc := range scenarios {
-		out := score.Compute(sc, nil, now)
+		out := score.Compute(sc, nil, nil, now)
 		var atts []map[string]any
 		for _, a := range sc {
 			atts = append(atts, map[string]any{

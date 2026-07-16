@@ -394,7 +394,16 @@ func (s *Server) recomputeScore(did string) (score.Output, error) {
 	if err != nil {
 		return score.Output{}, err
 	}
+	// Per-issuer trust weight + owner resolution for the independence rule.
+	// ownerOf maps the subject and each issuer to its controlling owner so
+	// score.Compute can drop self-dealing (same-owner) attestations. Owners come
+	// from the signed cards, so the discount is reproducible by anyone who
+	// fetches those cards — it is a property of the function, not this server.
 	weights := map[string]float64{}
+	ownerOf := map[string]string{}
+	if c, _ := s.Store.GetCard(did); c != nil {
+		ownerOf[did] = c.Owner
+	}
 	for _, a := range atts {
 		if _, seen := weights[a.Issuer]; seen {
 			continue
@@ -404,8 +413,11 @@ func (s *Server) recomputeScore(did string) (score.Output, error) {
 		} else {
 			weights[a.Issuer] = 0.25 // unregistered / fresh issuer
 		}
+		if c, _ := s.Store.GetCard(a.Issuer); c != nil {
+			ownerOf[a.Issuer] = c.Owner
+		}
 	}
-	out := score.Compute(atts, weights, time.Now().UTC())
+	out := score.Compute(atts, weights, ownerOf, time.Now().UTC())
 	_ = s.Store.SetScore(did, out)
 	return out, nil
 }

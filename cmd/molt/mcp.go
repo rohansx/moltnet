@@ -201,7 +201,7 @@ func (s *mcpServer) toolVerify(argsRaw json.RawMessage) (any, error) {
 	}
 	cardErr := card.Verify()
 	chainErr := core.VerifyAll(atts)
-	out := score.Compute(atts, nil, time.Now().UTC())
+	out := score.Compute(atts, nil, nil, time.Now().UTC())
 	verdict := map[string]any{
 		"did":                a.DID,
 		"name":               card.Name,

@@ -228,6 +228,7 @@ def _decay(issued_at: str, now_sec: float, half_life_days: float) -> float:
 def compute_score(
     atts: list[dict],
     issuer_weights: Optional[dict[str, float]] = None,
+    owner_of: Optional[dict[str, str]] = None,
     now: Optional[datetime] = None,
 ) -> dict:
     if now is None:
@@ -239,11 +240,18 @@ def compute_score(
             return 1.0
         return issuer_weights.get(issuer, 0.25)
 
+    # Independence rule (mirrors score/score.go): drop any attestation whose
+    # issuer shares an owner with the subject. owner_of=None disables it — the
+    # trustless uniform basis a standalone verifier uses.
+    subject_owner = owner_of.get(atts[0]["subject"]) if owner_of is not None and atts else None
+
     wc = wd = wi = 0.0
     inputs = {"completions": 0, "disputes": 0, "incidents": 0, "endorsements": 0, "receipts": 0, "distinct_issuers": 0}
     issuers: set[str] = set()
 
     for a in atts:
+        if subject_owner is not None and owner_of.get(a.get("issuer", "")) == subject_owner:
+            continue  # self-dealing
         iw = weight_of(a.get("issuer", ""))
         t = a.get("type")
         ts = a.get("issued_at", "")

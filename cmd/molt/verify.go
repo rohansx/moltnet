@@ -63,7 +63,7 @@ func cmdVerify(args []string) error {
 	}
 
 	// 3. Recompute MoltScore locally with default (trustless) issuer weights.
-	out := score.Compute(atts, nil, time.Now().UTC())
+	out := score.Compute(atts, nil, nil, time.Now().UTC())
 	fmt.Printf("\n  MoltScore (recomputed locally, %s): %s\n", score.Algorithm, scoreLine(out))
 
 	if !cardOK || chainErr != nil {

@@ -64,6 +64,51 @@ func getJSON(t *testing.T, url string, out any) int {
 	return resp.StatusCode
 }
 
+// A task.completed from an agent the SUBJECT's own owner controls is
+// self-dealing (wash trading) and must not move the score. This proves the
+// registry resolves owners from the signed cards and applies score.Compute's
+// independence rule end to end.
+func TestScoreDropsSameOwnerAttestations(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	owner, _ := core.GenerateKeyPair()
+	agent, _ := core.GenerateKeyPair()
+	sibling, _ := core.GenerateKeyPair() // same owner as the subject
+
+	if code, _ := postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, agent, "subject", "code.review")); code != 201 {
+		t.Fatalf("register subject: %d", code)
+	}
+	if code, _ := postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, sibling, "sibling")); code != 201 {
+		t.Fatalf("register sibling: %d", code)
+	}
+
+	a := core.NewAttestation(core.TypeTaskCompleted, sibling.DID, agent.DID)
+	a.Body = map[string]any{"outcome": "success"}
+	if err := a.Sign(sibling.Private); err != nil {
+		t.Fatal(err)
+	}
+	// The signed record itself is valid and is accepted onto the ledger…
+	if code, body := postJSON(t, ts.URL+"/v1/attestations", a); code != 201 {
+		t.Fatalf("attest: %d: %s", code, body)
+	}
+
+	// …but the score ignores it, because issuer and subject share an owner.
+	var resp struct {
+		Inputs struct {
+			Completions     int `json:"completions"`
+			DistinctIssuers int `json:"distinct_issuers"`
+		} `json:"inputs"`
+	}
+	if code := getJSON(t, ts.URL+"/v1/score/"+agent.DID, &resp); code != 200 {
+		t.Fatalf("score: %d", code)
+	}
+	if resp.Inputs.Completions != 0 || resp.Inputs.DistinctIssuers != 0 {
+		t.Fatalf("same-owner attestation must not count: completions=%d issuers=%d",
+			resp.Inputs.Completions, resp.Inputs.DistinctIssuers)
+	}
+}
+
 func TestRegisterAttestScoreFlow(t *testing.T) {
 	ts, cleanup := testEnv(t)
 	defer cleanup()
@@ -71,13 +116,17 @@ func TestRegisterAttestScoreFlow(t *testing.T) {
 	owner, _ := core.GenerateKeyPair()
 	agent, _ := core.GenerateKeyPair()
 	issuer, _ := core.GenerateKeyPair()
+	// The issuer is an INDEPENDENT party (its own owner), so its attestation is
+	// not self-dealing. An issuer sharing `owner` would be discounted to zero —
+	// see TestScoreDropsSameOwnerAttestations.
+	issuerOwner, _ := core.GenerateKeyPair()
 
 	// Register subject agent.
 	if code, body := postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, agent, "subject", "code.review")); code != 201 {
 		t.Fatalf("register subject: got %d: %s", code, body)
 	}
-	// Register issuer as an agent too.
-	if code, _ := postJSON(t, ts.URL+"/v1/agents", mustCard(t, owner, issuer, "issuer")); code != 201 {
+	// Register issuer as an agent too, under its own owner.
+	if code, _ := postJSON(t, ts.URL+"/v1/agents", mustCard(t, issuerOwner, issuer, "issuer")); code != 201 {
 		t.Fatalf("register issuer: %d", code)
 	}
 
@@ -472,9 +521,9 @@ func TestOpenAPISpec(t *testing.T) {
 		t.Fatalf("content-type = %q", ct)
 	}
 	var doc struct {
-		OpenAPI string                 `json:"openapi"`
-		Info    map[string]any         `json:"info"`
-		Paths   map[string]any         `json:"paths"`
+		OpenAPI string         `json:"openapi"`
+		Info    map[string]any `json:"info"`
+		Paths   map[string]any `json:"paths"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
 		t.Fatalf("openapi.json is not valid JSON: %v", err)

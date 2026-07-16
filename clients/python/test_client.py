@@ -36,10 +36,10 @@ class TestDidKey(unittest.TestCase):
 class TestScore(unittest.TestCase):
     def test_self_claims_zero(self):
         now = datetime.now(timezone.utc)
-        base = mc.compute_score([], None, now)["score"]
+        base = mc.compute_score([], None, None, now)["score"]
         with_claims = mc.compute_score(
             [{"type": "self.claim", "issuer": "did:key:zA", "issued_at": now.isoformat()}],
-            None, now,
+            None, None, now,
         )["score"]
         self.assertEqual(base, with_claims)
 
@@ -48,7 +48,7 @@ class TestScore(unittest.TestCase):
         iso = now.isoformat()
         one = [{"type": "task.completed", "issuer": "did:key:zA", "issued_at": iso} for _ in range(8)]
         many = [{"type": "task.completed", "issuer": f"did:key:z{i}", "issued_at": iso} for i in range(8)]
-        self.assertGreater(mc.compute_score(many, None, now)["score"], mc.compute_score(one, None, now)["score"])
+        self.assertGreater(mc.compute_score(many, None, None, now)["score"], mc.compute_score(one, None, None, now)["score"])
 
 
 class TestEd25519Interop(unittest.TestCase):

@@ -17,7 +17,7 @@ test('MoltScore matches the shared conformance vectors', () => {
   const vectors = load('score_vectors.json');
   assert.ok(vectors.length > 0);
   for (const v of vectors) {
-    const out = computeScore(v.attestations || [], null, new Date(v.now));
+    const out = computeScore(v.attestations || [], null, null, new Date(v.now));
     assert.ok(Math.abs(out.score - v.expected.score) < 0.05,
       `score ${out.score} vs expected ${v.expected.score}`);
     assert.deepEqual(out.inputs, v.expected.inputs);

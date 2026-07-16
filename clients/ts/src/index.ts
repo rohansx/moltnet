@@ -185,17 +185,24 @@ function decay(issuedAt: string, nowSec: number, halfLifeDays: number): number {
 export function computeScore(
   atts: Attestation[],
   issuerWeights: Record<string, number> | null = null,
+  ownerOf: Record<string, string> | null = null,
   now: Date = new Date()
 ): ScoreOutput {
   const nowSec = now.getTime() / 1000;
   const weightOf = (issuer: string): number =>
     issuerWeights == null ? 1.0 : (issuer in issuerWeights ? issuerWeights[issuer] : 0.25);
 
+  // Independence rule (mirrors score/score.go): drop any attestation whose issuer
+  // shares an owner with the subject. Passing ownerOf=null disables it — the
+  // trustless uniform basis a standalone verifier uses.
+  const subjectOwner = ownerOf != null && atts.length > 0 ? ownerOf[atts[0].subject] : undefined;
+
   let wc = 0, wd = 0, wi = 0;
   const inputs: ScoreInputs = { completions: 0, disputes: 0, incidents: 0, endorsements: 0, receipts: 0, distinct_issuers: 0 };
   const issuers = new Set<string>();
 
   for (const a of atts) {
+    if (subjectOwner !== undefined && ownerOf![a.issuer] === subjectOwner) continue; // self-dealing
     const iw = weightOf(a.issuer);
     switch (a.type) {
       case 'task.completed': inputs.completions++; wc += iw * decay(a.issued_at, nowSec, HALF_LIFE_POS); issuers.add(a.issuer); break;
@@ -254,4 +261,50 @@ export async function verifyAgent(
     inputs: out.inputs,
     attestationCount: atts.length,
   };
+}
+
+// ---- Signing + posting (the piece browser/CLI clients were missing) ----
+
+export type Signer = (message: string) => Promise<string>;
+
+/**
+ * Sign an attestation: canonicalize it WITHOUT `sig` (the exact bytes the server
+ * re-checks), sign them, and return a copy with `sig` set. The signer maps a
+ * canonical string to a hex Ed25519 signature — a WebCrypto key in the browser
+ * or a molt keyfile in Node. The library could verify but never sign; this
+ * closes that gap for every write path (settlement, consent, audit).
+ */
+export async function signAttestation(att: Attestation, sign: Signer): Promise<Attestation> {
+  const payload = canonicalizeWithout(att as Record<string, unknown>, ['sig']);
+  const sig = await sign(payload);
+  return { ...att, sig };
+}
+
+/**
+ * Post an attestation, chaining it onto the issuer's current head. The registry
+ * enforces prev == IssuerHead and 409s a stale prev, so a hot signer that races
+ * other posts must refetch the head and re-sign. `att.issuer` must be set; `prev`
+ * and `sig` are (re)computed here on each attempt.
+ */
+export async function postAttestation(
+  registryUrl: string,
+  att: Attestation,
+  sign: Signer,
+  fetchImpl: typeof fetch = fetch,
+  maxRetries = 3,
+): Promise<{ hash: string }> {
+  const base = registryUrl.replace(/\/$/, '');
+  for (let attempt = 0; ; attempt++) {
+    const headResp = await fetchImpl(`${base}/v1/issuers/${encodeURIComponent(att.issuer)}/head`);
+    const head = headResp.ok ? (((await headResp.json()) as { head?: string }).head ?? '') : '';
+    const signed = await signAttestation({ ...att, prev: head }, sign);
+    const resp = await fetchImpl(`${base}/v1/attestations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signed),
+    });
+    if (resp.ok) return (await resp.json()) as { hash: string };
+    if (resp.status === 409 && attempt < maxRetries) continue; // head advanced — refetch + re-sign
+    throw new Error(`post attestation failed: ${resp.status} ${await resp.text()}`);
+  }
 }

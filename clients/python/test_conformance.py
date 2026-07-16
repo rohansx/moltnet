@@ -29,7 +29,7 @@ class TestConformance(unittest.TestCase):
         self.assertGreater(len(vectors), 0)
         for v in vectors:
             now = datetime.fromisoformat(v["now"].replace("Z", "+00:00"))
-            out = mc.compute_score(v.get("attestations") or [], None, now)
+            out = mc.compute_score(v.get("attestations") or [], None, None, now)
             self.assertAlmostEqual(out["score"], v["expected"]["score"], delta=0.05)
             self.assertEqual(out["inputs"], v["expected"]["inputs"])
 

@@ -60,12 +60,26 @@ type Output struct {
 // defaultIssuerWeight, so a farm of fresh keypairs contributes little. Passing
 // nil weights everyone at 1.0, which is the correct default for a standalone,
 // trustless recomputation.
-func Compute(atts []*core.Attestation, issuerWeights map[string]float64, now time.Time) Output {
+//
+// ownerOf optionally maps a DID (the subject and any issuer) to its controlling
+// owner DID. When supplied, any attestation whose issuer shares an owner with
+// the subject is DROPPED as self-dealing — wash trading or self-endorsement.
+// This independence rule lives in the function, not a server gate, so anyone who
+// can resolve the owners recomputes the same number; passing nil disables it
+// (the trustless uniform basis, as `molt verify` uses).
+func Compute(atts []*core.Attestation, issuerWeights map[string]float64, ownerOf map[string]string, now time.Time) Output {
 	const defaultIssuerWeight = 1.0
 
 	var weightedCompletions, weightedDisputes, weightedIncidents float64
 	var in Inputs
 	positiveIssuers := map[string]struct{}{}
+
+	// The subject is constant across a Compute call (all attestations are ABOUT
+	// the same agent); resolve its owner once for the self-dealing check.
+	var subjectOwner string
+	if ownerOf != nil && len(atts) > 0 {
+		subjectOwner = ownerOf[atts[0].Subject]
+	}
 
 	weightOf := func(issuer string) float64 {
 		if issuerWeights == nil {
@@ -78,6 +92,11 @@ func Compute(atts []*core.Attestation, issuerWeights map[string]float64, now tim
 	}
 
 	for _, a := range atts {
+		// Self-dealing: the issuer is controlled by the subject's own owner. Drop
+		// it entirely — it contributes to no weighted sum and no diversity count.
+		if subjectOwner != "" && ownerOf[a.Issuer] == subjectOwner {
+			continue
+		}
 		iw := weightOf(a.Issuer)
 		switch a.Type {
 		case core.TypeTaskCompleted:

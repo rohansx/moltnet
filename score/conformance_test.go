@@ -44,7 +44,7 @@ func TestScoreConformance(t *testing.T) {
 				IssuedAt: m["issued_at"].(string),
 			})
 		}
-		out := Compute(atts, nil, now)
+		out := Compute(atts, nil, nil, now)
 		if out.Score != v.Expected.Score {
 			t.Errorf("vector %d: score got %v want %v", i, out.Score, v.Expected.Score)
 		}

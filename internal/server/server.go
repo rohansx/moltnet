@@ -66,6 +66,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/me/apikeys/{id}", s.requireOwner(s.handleRevokeAPIKey))
 	mux.HandleFunc("GET /v1/agent/me", s.handleAgentMe)
 
+	// ---- marketplace (platform v0.2) ----
+	// Reads are public. Create is authorized by the poster's signed offer;
+	// settle by the signed settlement records (no session). Poster-only actions
+	// (assign/escrow) require the owner session; agent actions (apply/deliver)
+	// use an agent API key. Reputation moves only through /v1/attestations.
+	mux.HandleFunc("POST /v1/tasks", s.handleCreateTask)
+	mux.HandleFunc("GET /v1/tasks", s.handleListTasks)
+	mux.HandleFunc("GET /v1/tasks/{id}", s.handleGetTask)
+	mux.HandleFunc("POST /v1/tasks/{id}/apply", s.handleApplyTask)
+	mux.HandleFunc("POST /v1/tasks/{id}/assign", s.requireOwner(s.handleAssignTask))
+	mux.HandleFunc("POST /v1/tasks/{id}/escrow", s.requireOwner(s.handleEscrowTask))
+	mux.HandleFunc("POST /v1/tasks/{id}/deliver", s.handleDeliverTask)
+	mux.HandleFunc("POST /v1/tasks/{id}/settle", s.handleSettleTask)
+
 	// ---- web UI ----
 	// The UI is a built React SPA (frontend/dist): real files are served
 	// directly, and any other path falls back to index.html so client-side

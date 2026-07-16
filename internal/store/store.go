@@ -120,6 +120,41 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_key_owner ON api_keys(owner_did);
 CREATE INDEX IF NOT EXISTS idx_key_agent ON api_keys(agent_did);
+
+-- Marketplace (platform v0.2). The board is CONVENIENCE state: reputation moves
+-- only through the signed task.completed / payment.receipt attestations on the
+-- normal ledger. The id column is the blake3 hash of the poster's signed offer,
+-- so the terms are non-repudiable; offer_json is that signed self.claim.
+CREATE TABLE IF NOT EXISTS tasks (
+    id            TEXT PRIMARY KEY,
+    poster_did    TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    spec          TEXT,
+    budget        TEXT,
+    currency      TEXT,
+    rail          TEXT,          -- x402 | stripe
+    status        TEXT NOT NULL, -- open|assigned|escrow|done|paid|disputed
+    assignee_did  TEXT,
+    escrow_ref    TEXT,
+    artifact_hash TEXT,
+    artifact_url  TEXT,
+    completed_att TEXT,          -- hash of the settling task.completed
+    receipt_att   TEXT,          -- hash of the settling payment.receipt
+    offer_json    TEXT NOT NULL, -- the poster-signed self.claim offer
+    created_at    TEXT,
+    updated_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_poster ON tasks(poster_did);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_did);
+CREATE TABLE IF NOT EXISTS task_applications (
+    task_id       TEXT NOT NULL,
+    applicant_did TEXT NOT NULL,
+    bid           TEXT,
+    note          TEXT,
+    created_at    TEXT,
+    PRIMARY KEY (task_id, applicant_did)
+);
 `
 
 // migrations are idempotent statements applied after the schema, for stores

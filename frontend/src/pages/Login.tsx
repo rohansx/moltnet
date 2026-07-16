@@ -99,8 +99,10 @@ export function Login() {
   return (
     <>
       <Spine middle="SIGN IN" />
-      <div className="wrap" style={{ maxWidth: 460, display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
-        <div className="card" style={{ background: 'var(--sf)', border: '1px solid var(--line-2)', padding: 32, width: '100%' }}>
+      {/* NOT .wrap — in system.css that is a flex-wrap utility, not the static
+          site's centered container, so it left-pinned the card. */}
+      <div className="authpage">
+        <div className="card" style={{ position: 'relative', background: 'var(--sf)', border: '1px solid var(--line-2)', padding: 32, width: '100%' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 6 }}>
             <span style={{ color: 'var(--ac)', letterSpacing: '-2px', fontSize: 18 }} className="mark">
               <span className="gx">▚▞</span> <span className="nm">MoltNet</span>

@@ -49,6 +49,13 @@
   .ex-layout, .pf-grid, .pf-hero, .ds-grid2, .ds-grid3 { grid-template-columns: 1fr; }
 }
 
+/* ---- auth pages (sign in): one card, centered in the viewport ---- */
+.authpage {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 40px 24px;
+}
+.authpage > .card { max-width: 460px; }
+
 /* ---- marketplace board (platform v0.2) ---- */
 .mk-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .mk-col { border: 1px solid var(--line); background: var(--sf-2); padding: 10px; min-height: 140px; }

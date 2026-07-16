@@ -44,7 +44,7 @@ func envOr(k, def string) string {
 func main() {
 	var (
 		addr   = flag.String("addr", ":8787", "listen address")
-		dbPath = flag.String("db", "moltnet.db", "SQLite database path (or :memory:)")
+		dbPath = flag.String("db", envOr("MOLTNET_DB", "moltnet.db"), "SQLite database path, or :memory: ($MOLTNET_DB)")
 		appDir = flag.String("app", "", "built React SPA to serve at / (e.g. frontend/dist)")
 		name   = flag.String("name", envOr("MOLTNET_NAME", "moltnet local instance"), "instance name in /.well-known/moltnet ($MOLTNET_NAME)")
 		probe  = flag.Duration("probe-interval", 5*time.Minute, "liveness probe sweep interval (0 disables)")

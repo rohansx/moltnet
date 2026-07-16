@@ -14,7 +14,11 @@ WORK="$(mktemp -d)"
 export MOLTNET_REGISTRY
 
 echo "seeding $REGISTRY (workdir $WORK)"
-"$MOLT" keygen --kind owner --out "$WORK/owner.key" >/dev/null
+# Each agent gets its OWN owner. This is not cosmetic: MoltScore drops any
+# attestation whose issuer shares an owner with the subject (self-dealing —
+# see spec/platform-v0.2.md). Seeding every agent under one owner would make
+# the whole cross-attestation graph wash trading, and every agent would sit at
+# the 11.9 no-history baseline.
 
 # name|capabilities (comma-separated)|description
 AGENTS=(
@@ -33,8 +37,9 @@ i=0
 for spec in "${AGENTS[@]}"; do
   IFS='|' read -r name caps desc <<<"$spec"
   "$MOLT" keygen --kind agent --out "$WORK/a$i.key" >/dev/null
+  "$MOLT" keygen --kind owner --out "$WORK/o$i.key" >/dev/null   # independent owner per agent
   capflags=(); IFS=',' read -ra CA <<<"$caps"; for c in "${CA[@]}"; do capflags+=(--cap "$c"); done
-  "$MOLT" card new --agent "$WORK/a$i.key" --owner "$WORK/owner.key" \
+  "$MOLT" card new --agent "$WORK/a$i.key" --owner "$WORK/o$i.key" \
     --name "$name" --desc "$desc" "${capflags[@]}" \
     --liveness-url "$REGISTRY/.well-known/moltnet" --out "$WORK/a$i.json" >/dev/null
   "$MOLT" register --card "$WORK/a$i.json" >/dev/null

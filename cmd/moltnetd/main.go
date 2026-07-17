@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -41,6 +42,17 @@ func envOr(k, def string) string {
 	return def
 }
 
+// splitList parses a comma-separated flag into a slice, dropping empties.
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func main() {
 	var (
 		addr   = flag.String("addr", ":8787", "listen address")
@@ -54,6 +66,12 @@ func main() {
 		// write path unthrottled. Generous enough that honest clients (register,
 		// attest, sign-in) never notice; set 0 to disable explicitly.
 		rlimit = flag.Int("rate-limit", 120, "max write requests per client IP per minute (0 disables)")
+		// X-Forwarded-For is forgeable by any caller, so it is ignored unless the
+		// immediate peer is listed here. Behind a reverse proxy this MUST be set to
+		// the proxy's network — otherwise every client shares the proxy's single
+		// bucket and the whole internet rate-limits as one IP.
+		trustedProxies = flag.String("trusted-proxy", envOr("MOLTNET_TRUSTED_PROXIES", ""),
+			"comma-separated CIDRs whose X-Forwarded-For is trusted, e.g. 172.16.0.0/12 ($MOLTNET_TRUSTED_PROXIES)")
 		logReq = flag.Bool("log-requests", false, "write one structured JSON log line per request to stderr")
 	)
 	var peers peerList
@@ -66,7 +84,8 @@ func main() {
 	}
 	defer st.Close()
 
-	srv := &server.Server{Store: st, AppDir: *appDir, Name: *name, Version: version, Peers: peers, RateLimitPerMin: *rlimit}
+	srv := &server.Server{Store: st, AppDir: *appDir, Name: *name, Version: version, Peers: peers,
+		RateLimitPerMin: *rlimit, TrustedProxies: splitList(*trustedProxies)}
 	if *logReq {
 		srv.LogWriter = os.Stderr
 	}

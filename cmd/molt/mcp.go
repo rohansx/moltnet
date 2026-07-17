@@ -196,8 +196,11 @@ func (s *mcpServer) toolVerify(argsRaw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if card == nil {
-		return nil, fmt.Errorf("agent %s not found", a.DID)
+	// Same binding check as `molt verify` — and it matters more here: the caller
+	// is an agent deciding whether to hire, with no human to notice that the name
+	// coming back is not the one it asked about.
+	if err := checkSubjectBinding(a.DID, card, atts); err != nil {
+		return nil, err
 	}
 	cardErr := card.Verify()
 	chainErr := core.VerifyAll(atts)

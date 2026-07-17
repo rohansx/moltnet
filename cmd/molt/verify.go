@@ -9,6 +9,31 @@ import (
 	"github.com/moltnet/moltnet/score"
 )
 
+// checkSubjectBinding proves the registry answered the question we asked.
+//
+// Signature checks alone cannot do this: in a substitution attack every record
+// is genuinely signed and every chain is intact — the registry simply hands
+// back a different agent's card, or another agent's track record filed under
+// the requested DID. Both pass `card.Verify()` and `core.VerifyAll()` and would
+// print "verified ✓" while reporting a stranger's reputation. The binding to
+// the requested DID is the one property the registry chooses, so it is the one
+// property that must be checked before anything else is believed.
+func checkSubjectBinding(did string, card *core.Card, atts []*core.Attestation) error {
+	if card == nil {
+		return fmt.Errorf("agent %s not found", did)
+	}
+	if card.ID != did {
+		return fmt.Errorf("registry returned a card for %s, but %s was requested — do not trust this registry", card.ID, did)
+	}
+	for _, a := range atts {
+		if a.Subject != did {
+			h, _ := a.Hash()
+			return fmt.Errorf("attestation %s is about %s, not the requested %s — do not trust this registry", h, a.Subject, did)
+		}
+	}
+	return nil
+}
+
 // cmdVerify is the flagship command. It pulls an agent's entire history from a
 // registry and proves it locally: every card and attestation signature is
 // checked, every issuer chain is verified, and the MoltScore is recomputed from
@@ -27,8 +52,8 @@ func cmdVerify(args []string) error {
 	if err != nil {
 		return err
 	}
-	if card == nil {
-		return fmt.Errorf("agent %s not found", did)
+	if err := checkSubjectBinding(did, card, atts); err != nil {
+		return err
 	}
 
 	fmt.Printf("VERIFY  %s\n", did)

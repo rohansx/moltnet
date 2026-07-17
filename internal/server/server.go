@@ -25,6 +25,13 @@ type Server struct {
 	// RateLimitPerMin caps write (POST/PUT/PATCH/DELETE) requests per client IP
 	// per minute. 0 disables rate limiting. Reads are never limited.
 	RateLimitPerMin int
+	// TrustedProxies lists CIDRs (or bare IPs) whose X-Forwarded-For header is
+	// believed when identifying the client for rate limiting. Empty means trust
+	// nobody and always use the peer address — the safe default, since any
+	// caller can forge the header and mint themselves a fresh bucket. Set this
+	// to the reverse proxy's network when running behind one (e.g. Traefik),
+	// otherwise every client shares the proxy's single bucket.
+	TrustedProxies []string
 	// LogWriter, if set, receives one structured JSON log line per request.
 	LogWriter io.Writer
 }
@@ -93,14 +100,20 @@ func (s *Server) Handler() http.Handler {
 	}
 
 	var handler http.Handler = mux
+	// Misconfiguration here silently weakens abuse control, so fail loudly at
+	// startup rather than guess.
+	trusted, err := parseTrustedProxies(s.TrustedProxies)
+	if err != nil {
+		panic("moltnet: invalid trusted proxy: " + err.Error())
+	}
 	if s.RateLimitPerMin > 0 {
 		// Burst = the per-minute cap; refill at cap/60 tokens per second.
 		rl := newRateLimiter(s.RateLimitPerMin, float64(s.RateLimitPerMin)/60.0)
-		handler = rateLimitWrites(rl, handler)
+		handler = rateLimitWrites(rl, trusted, handler)
 	}
 	handler = withCORS(handler)
 	// Logging is outermost so it records the final status (incl. 429/CORS).
-	return withLogging(s.LogWriter, handler)
+	return withLogging(s.LogWriter, trusted, handler)
 }
 
 func withCORS(h http.Handler) http.Handler {

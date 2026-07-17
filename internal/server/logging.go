@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"time"
 )
@@ -31,7 +32,10 @@ func newRequestID() string {
 
 // withLogging assigns/propagates a request id (X-Request-Id) and writes one
 // structured JSON log line per request to w. A nil writer disables logging.
-func withLogging(w io.Writer, h http.Handler) http.Handler {
+// trusted is the same trusted-proxy set the rate limiter uses, so the logged IP
+// is the one that was actually rate-limited — logging a forgeable header while
+// bucketing on something else would make abuse impossible to trace back.
+func withLogging(w io.Writer, trusted []*net.IPNet, h http.Handler) http.Handler {
 	if w == nil {
 		return h
 	}
@@ -54,7 +58,7 @@ func withLogging(w io.Writer, h http.Handler) http.Handler {
 			"path":   r.URL.Path,
 			"status": rec.status,
 			"dur_ms": time.Since(start).Milliseconds(),
-			"ip":     clientIP(r),
+			"ip":     clientIP(r, trusted),
 		})
 	})
 }

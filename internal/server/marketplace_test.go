@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/moltnet/moltnet/core"
@@ -132,6 +133,97 @@ func TestMarketplaceHappyPath(t *testing.T) {
 	getJSON(t, ts.URL+"/v1/score/"+worker.DID, &sc)
 	if sc.Inputs.Completions != 1 {
 		t.Fatalf("settled task must produce one scored completion, got %d", sc.Inputs.Completions)
+	}
+}
+
+// A payment.receipt is the payer's signed statement that they paid. If any key
+// may sign one, an assignee can mint a receipt naming itself and flip its own
+// task to PAID with no money moving — and because the forged issuer is a
+// separate free identity, the ownerOf independence rule does not discount it,
+// so the fake payout also earns real score. Receipts are the only signal in
+// MoltScore backed by economic cost; unbinding the issuer removes that cost.
+func TestSettleRejectsReceiptNotIssuedByThePoster(t *testing.T) {
+	ts, cleanup := testEnv(t)
+	defer cleanup()
+
+	posterOwner, _ := core.GenerateKeyPair()
+	poster, _ := core.GenerateKeyPair()
+	workerOwner, _ := core.GenerateKeyPair()
+	worker, _ := core.GenerateKeyPair()
+	// The assignee's throwaway second identity, under its own owner so the
+	// self-dealing rule cannot catch it either.
+	shillOwner, _ := core.GenerateKeyPair()
+	shill, _ := core.GenerateKeyPair()
+
+	for _, c := range []*core.Card{
+		mustCard(t, posterOwner, poster, "poster"),
+		mustCard(t, workerOwner, worker, "worker", "code.review"),
+		mustCard(t, shillOwner, shill, "shill"),
+	} {
+		if code, body := postJSON(t, ts.URL+"/v1/agents", c); code != 201 {
+			t.Fatalf("register: %d %s", code, body)
+		}
+	}
+
+	var task struct {
+		ID string `json:"id"`
+	}
+	_, body := postJSON(t, ts.URL+"/v1/tasks", signedOffer(t, poster, "refactor auth", "300"))
+	decode(t, body, &task)
+
+	posterToken := loginOwner(t, ts.URL, posterOwner)
+	if code, b := postJSONAuth(t, ts.URL+"/v1/tasks/"+task.ID+"/assign", posterToken, map[string]string{"assignee": worker.DID}); code != 200 {
+		t.Fatalf("assign: %d %s", code, b)
+	}
+	if code, b := postJSONAuth(t, ts.URL+"/v1/tasks/"+task.ID+"/escrow", posterToken, map[string]string{"escrow_ref": "0xchain-tx-abc"}); code != 200 {
+		t.Fatalf("escrow: %d %s", code, b)
+	}
+	workerToken := loginOwner(t, ts.URL, workerOwner)
+	var mint struct {
+		Key string `json:"key"`
+	}
+	_, mb := postJSONAuth(t, ts.URL+"/v1/me/apikeys", workerToken, map[string]string{"agent_did": worker.DID, "name": "work"})
+	decode(t, mb, &mint)
+	if code, b := postJSONAuth(t, ts.URL+"/v1/tasks/"+task.ID+"/deliver", mint.Key, map[string]string{"artifact_hash": "blake3:deadbeef"}); code != 200 {
+		t.Fatalf("deliver: %d %s", code, b)
+	}
+
+	// The poster genuinely signed off on the work — this part is honest, and
+	// happens whenever a poster is satisfied, independent of payment terms.
+	completed := core.NewAttestation(core.TypeTaskCompleted, poster.DID, worker.DID)
+	completed.Body = map[string]any{"task": task.ID, "outcome": "success"}
+	if err := completed.Sign(poster.Private); err != nil {
+		t.Fatal(err)
+	}
+	compHash, _ := completed.Hash()
+	if code, b := postJSON(t, ts.URL+"/v1/attestations", completed); code != 201 {
+		t.Fatalf("post completed: %d %s", code, b)
+	}
+
+	// The forgery: the shill — NOT the poster — signs "the worker was paid".
+	receipt := core.NewAttestation(core.TypePaymentReceipt, shill.DID, worker.DID)
+	receipt.Body = map[string]any{"task": task.ID, "amount": "300", "currency": "USDC", "rail": "x402"}
+	if err := receipt.Sign(shill.Private); err != nil {
+		t.Fatal(err)
+	}
+	rcptHash, _ := receipt.Hash()
+	if code, b := postJSON(t, ts.URL+"/v1/attestations", receipt); code != 201 {
+		t.Fatalf("post receipt: %d %s", code, b)
+	}
+
+	if code, b := postJSON(t, ts.URL+"/v1/tasks/"+task.ID+"/settle",
+		map[string]string{"completed": compHash, "receipt": rcptHash}); code != http.StatusBadRequest {
+		t.Fatalf("a receipt signed by anyone but the payer must not settle a task; got %d %s", code, b)
+	}
+
+	var got struct {
+		Task struct {
+			Status string `json:"status"`
+		} `json:"task"`
+	}
+	getJSON(t, ts.URL+"/v1/tasks/"+task.ID, &got)
+	if got.Task.Status == "paid" {
+		t.Fatal("task reached PAID with a forged receipt and no payment")
 	}
 }
 

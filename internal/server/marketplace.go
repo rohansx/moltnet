@@ -221,9 +221,15 @@ func (s *Server) handleSettleTask(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "task.completed must be issued by the poster for the assignee and reference this task")
 		return
 	}
+	// The receipt must be signed by the PAYER — the poster. Without this the
+	// assignee can sign its own receipt (or have a throwaway identity sign it),
+	// flip the task to PAID with no money moving, and bank the score: a receipt
+	// from a second free keypair is not same-owner, so the independence rule
+	// does not discount it either. The receipt is the only signal in MoltScore
+	// backed by economic cost; an unbound issuer removes that cost entirely.
 	if rcpt.Type != core.TypePaymentReceipt || rcpt.Subject != t.Assignee ||
-		strField(rcpt.Body, "task") != t.ID {
-		writeErr(w, http.StatusBadRequest, "payment.receipt must be for the assignee and reference this task")
+		rcpt.Issuer != t.Poster || strField(rcpt.Body, "task") != t.ID {
+		writeErr(w, http.StatusBadRequest, "payment.receipt must be issued by the poster for the assignee and reference this task")
 		return
 	}
 

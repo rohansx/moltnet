@@ -1,6 +1,8 @@
 package server
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,6 +50,85 @@ func TestRateLimiterBurstThenBlockThenRefill(t *testing.T) {
 	if allowed != 2 {
 		t.Fatalf("refill should cap at burst=2, got %d allowed", allowed)
 	}
+}
+
+// An untrusted caller must not be able to mint a fresh token bucket per request
+// by inventing an X-Forwarded-For. The limiter is the only cost control on
+// unauthenticated writes (challenges, attestations), so spoofable keying makes
+// it decorative.
+func TestClientIPIgnoresForwardedForFromUntrustedPeer(t *testing.T) {
+	r := httptest.NewRequest("POST", "/v1/attestations", nil)
+	r.RemoteAddr = "203.0.113.9:5555"
+	r.Header.Set("X-Forwarded-For", "10.9.9.9")
+
+	if got := clientIP(r, nil); got != "203.0.113.9" {
+		t.Fatalf("with no trusted proxies, clientIP must use RemoteAddr; got %q", got)
+	}
+}
+
+// Behind a real proxy (moltnet.ai runs behind Traefik) the header is the ONLY
+// way to see the caller. Ignoring it unconditionally would bucket the whole
+// internet as one client, so a configured proxy must still be honoured.
+func TestClientIPHonoursForwardedForFromTrustedProxy(t *testing.T) {
+	trusted := mustCIDRs(t, []string{"172.16.0.0/12"})
+	r := httptest.NewRequest("POST", "/v1/attestations", nil)
+	r.RemoteAddr = "172.18.0.5:5555" // the docker-network proxy
+	r.Header.Set("X-Forwarded-For", "198.51.100.7, 172.18.0.5")
+
+	if got := clientIP(r, trusted); got != "198.51.100.7" {
+		t.Fatalf("trusted proxy's XFF should yield the original client; got %q", got)
+	}
+}
+
+// A spoofer behind the trusted proxy prepends their own entry. The rightmost
+// entries are appended by infrastructure we trust, so walk from the right and
+// take the last address that isn't itself a trusted hop.
+func TestClientIPResistsSpoofedPrefixBehindTrustedProxy(t *testing.T) {
+	trusted := mustCIDRs(t, []string{"172.16.0.0/12"})
+	r := httptest.NewRequest("POST", "/v1/attestations", nil)
+	r.RemoteAddr = "172.18.0.5:5555"
+	// Attacker sent "X-Forwarded-For: 1.1.1.1"; Traefik appended the real peer.
+	r.Header.Set("X-Forwarded-For", "1.1.1.1, 198.51.100.7")
+
+	if got := clientIP(r, trusted); got != "198.51.100.7" {
+		t.Fatalf("must use the last untrusted hop, not the attacker's forged prefix; got %q", got)
+	}
+}
+
+// End to end: spoofing the header must not buy extra write budget.
+func TestRateLimitNotBypassableByForgedForwardedFor(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	defer st.Close()
+	srv := &Server{Store: st, Name: "t", Version: "t", RateLimitPerMin: 3}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	got429 := false
+	for i := 0; i < 8; i++ {
+		req, _ := http.NewRequest("POST", ts.URL+"/v1/agents", strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.9.%d.%d", i, i)) // a new "IP" each time
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			got429 = true
+		}
+	}
+	if !got429 {
+		t.Fatal("forged X-Forwarded-For bypassed the write rate limit")
+	}
+}
+
+func mustCIDRs(t *testing.T, s []string) []*net.IPNet {
+	t.Helper()
+	n, err := parseTrustedProxies(s)
+	if err != nil {
+		t.Fatalf("parseTrustedProxies: %v", err)
+	}
+	return n
 }
 
 func TestRateLimitReturns429OnWritesButNotReads(t *testing.T) {

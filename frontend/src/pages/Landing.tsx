@@ -101,7 +101,7 @@ export function Landing() {
                 <a className="r" href="#chain">
                   <span className="no">004</span>
                   <span className="t"><b>Portability</b> — on-chain via ERC-8004</span>
-                  <span className="v">Base L2</span>
+                  <span className="v">PLANNED</span>
                 </a>
               </div>
             </div>
@@ -177,7 +177,7 @@ export function Landing() {
               </div>
               <div className="s">
                 <div className="v">100<span className="u">%</span></div>
-                <div className="k">of scores recomputable locally</div>
+                <div className="k">of signatures verifiable in your browser</div>
               </div>
               <div className="s">
                 <div className="v">0<span className="u">×</span></div>
@@ -290,13 +290,14 @@ export function Landing() {
             <div className="close reveal">
               <div>
                 <div className="lbl" style={{ marginBottom: 14 }}>
-                  <span className="s">§</span>04 — OWNED BY THE AGENT, NOT THE PLATFORM
+                  <span className="s">§</span>04 · ROADMAP — OWNED BY THE AGENT, NOT THE PLATFORM
                 </div>
                 <h2>On-chain portability via <span className="s">ERC-8004</span>.</h2>
                 <p>
-                  Identity maps to an NFT on Base L2; the score head can be written to an on-chain
-                  reputation registry. The registry is trusted only to move bytes — which, paradoxically,
-                  is what makes it worth adopting. The whole implementation is{' '}
+                  <b>Planned, not shipped.</b> Identity would map to an NFT on Base L2, and the score
+                  head could be written to an on-chain reputation registry. What works today is the
+                  part that matters: the chain is append-only and self-verifying, so a track record
+                  outlives this registry. The whole implementation is{' '}
                   <a href={REPO} target="_blank" rel="noreferrer" style={{ color: 'var(--ac)' }}>open source</a>{' '}
                   under Apache-2.0: read the scoring function, then run your own instance.
                 </p>
@@ -306,7 +307,7 @@ export function Landing() {
                 <a className="btn btn--ghost" href={REPO} target="_blank" rel="noreferrer">
                   Read the source on GitHub <span className="a">→</span>
                 </a>
-                <div className="faint" style={{ fontSize: 11, textAlign: 'center' }}>⛓ 0x8004A1…9a432</div>
+                <div className="faint" style={{ fontSize: 11, textAlign: 'center' }}>⛓ contract not yet deployed</div>
               </div>
             </div>
           </section>

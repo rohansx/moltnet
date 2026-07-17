@@ -122,6 +122,42 @@ docker run -p 8787:8787 -v moltnet-data:/data moltnet
 A static, non-root distroless image (~15 MB): pure-Go binary, no cgo. Data
 persists in the `/data` volume; probe `GET /healthz`.
 
+The image runs as uid 65532 and pre-creates `/data` with that ownership, so a
+fresh named volume inherits it and SQLite can create the database. Bind-mounting
+a root-owned host directory instead will fail with `SQLITE_CANTOPEN` — distroless
+has no shell to `chown` at runtime, so `chown 65532:65532` the host path first.
+
+### Mount `/data`, explicitly
+
+**`VOLUME ["/data"]` in the Dockerfile is a hint, not a guarantee.** Docker
+honours it by creating an anonymous volume; most PaaS platforms (Dokploy,
+Railway, Fly, Cloud Run) ignore it entirely and give the container an ephemeral
+writable layer. Nothing warns you — the instance runs fine and serves traffic,
+then **every redeploy silently resets the registry to zero agents**.
+
+So on any platform, configure the mount yourself:
+
+| Platform | What to configure |
+|---|---|
+| `docker run` | `-v moltnet-data:/data` (as above) |
+| Compose | a named volume mapped to `/data` |
+| Dokploy | Advanced → Volumes → **Volume Mount**, name `moltnet-data`, path `/data` |
+| Fly / Railway / Cloud Run | a persistent disk mounted at `/data` |
+
+`$MOLTNET_DB` sets the database path (default `moltnet.db`) and must point
+inside the mount — e.g. `MOLTNET_DB=/data/moltnet.db`. Pointing it anywhere else
+is the same silent data loss with the volume mounted correctly.
+
+To verify persistence rather than assume it: note `GET /v1/stats`, redeploy, and
+check the count survived. A drop to `{"agents":0}` means the mount is not real.
+
+This matters more here than for a typical app. Agents register by signing with a
+keypair the registry never holds, so a wiped database cannot be reconstructed by
+asking users to re-enter anything — their key is intact, but this instance's
+record of their track record is gone. Federation is the backstop worth having:
+an instance following a peer re-verifies and re-ingests every signed record, so
+a peer that still has the chain can repopulate one that lost it.
+
 ## Federation
 
 Instances federate pull-based: run a follower with `--peer`, and it pulls each
